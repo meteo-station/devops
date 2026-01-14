@@ -1,0 +1,39 @@
+---
+- hosts: monitoring
+  become: yes
+
+  vars_files:
+    - ../../secrets.yml
+    - ../../env.yml
+    - env.yml # Перетираем некоторые переменные окружения из env.yml
+
+  tasks:
+
+#    - name: Setup project environment
+#      import_role:
+#        name: project-environment
+#
+#    - name: Setup docker
+#      import_role:
+#        name: docker
+#
+    - name: Setup docker environment
+      import_role:
+          name: docker-environment
+
+#    - name: Setup prometheus
+#      import_role:
+#        name: prometheus
+
+    - name: Setup grafana
+      import_role:
+        name: grafana
+
+#    - name: Setup nginx
+#      import_role:
+#        name: nginx
+#
+    - name: Update nginx configs
+      import_role:
+          name: nginx
+          tasks_from: update-configs.yml

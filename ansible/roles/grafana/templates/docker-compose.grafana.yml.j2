@@ -1,0 +1,36 @@
+version: '3.7'
+
+name: {{compose_project_name}}
+
+services:
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - GF_SERVER_ROOT_URL=https://grafana.bonavii.com
+      - GF_RENDERING_SERVER_URL=http://renderer:8081/render
+      - GF_RENDERING_CALLBACK_URL=http://grafana:3000/
+      - GF_LOG_FILTERS=rendering:debug
+      - GF_UNIFIED_ALERTING_SCREENSHOTS_CAPTURE=true
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - "{{ compose_project_name }}-internal"
+      - meteoStation-internal
+
+  renderer:
+    image: grafana/grafana-image-renderer:latest
+    restart: unless-stopped
+    networks:
+      - "{{ compose_project_name }}-internal"
+
+volumes:
+  grafana_data:
+
+networks:
+  meteoStation-internal:
+    external: true
+  "{{ compose_project_name }}-internal":
+    external: true

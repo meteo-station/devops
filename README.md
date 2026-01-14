@@ -14,3 +14,4 @@
 
 ## Настройка серверов
 - [Meteo Station](ansible/servers/meteoStation/README.md)
+- [Мониторинг](ansible/servers/monitoring/README.md)
