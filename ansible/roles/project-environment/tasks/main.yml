@@ -1,0 +1,6 @@
+---
+- name: Ensure project directory exists
+  file:
+    path: "{{ project_dir }}"
+    state: directory
+    mode: '0755'

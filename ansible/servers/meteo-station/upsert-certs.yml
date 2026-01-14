@@ -1,0 +1,19 @@
+---
+- hosts: coin
+  become: yes
+
+  vars_files:
+    - ../../secrets.yml
+    - ../../env.yml
+    - env.yml
+
+  tasks:
+
+    - name: Create certs
+      import_role:
+        name: certs
+
+    - name: Update nginx configs
+      import_role:
+        name: nginx
+        tasks_from: update-configs.yml

@@ -1,0 +1,33 @@
+---
+- name: Ensure Certbot and plugin are installed
+  apt:
+    name:
+      - certbot
+      - python3-certbot-dns-digitalocean
+    state: present
+    update_cache: yes
+
+- name: Create credential file for DigitalOcean DNS plugin
+  copy:
+    dest: /etc/letsencrypt/certbot-creds.ini
+    content: |
+      dns_digitalocean_token = {{ digital_ocean_token }}
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Generate or renew SSL certificates for each domain
+  environment:
+    DNS_DIGITALOCEAN_TOKEN: "{{ digital_ocean_token }}"
+  command: >
+    certbot certonly
+    --dns-digitalocean
+    --dns-digitalocean-credentials /etc/letsencrypt/certbot-creds.ini
+    -d {{ main_domain }}
+    -d *.{{ main_domain }}
+    -d *.dev.{{ main_domain }}
+    -m {{ certbot_email }}
+    --agree-tos
+    --non-interactive
+  register: certbot_result
+  changed_when: "'Certificate not yet due for renewal' in certbot_result.stdout"

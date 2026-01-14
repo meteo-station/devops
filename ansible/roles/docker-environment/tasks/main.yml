@@ -1,0 +1,12 @@
+---
+- name: Create network
+  docker_network:
+      name: internal
+      state: present
+      driver: bridge
+
+- name: Log in to GitHub Container Registry
+  docker_login:
+    registry_url: "{{ github_registry }}"
+    username: "{{ github_username }}"
+    password: "{{ github_token }}"

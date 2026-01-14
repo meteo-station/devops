@@ -1,0 +1,24 @@
+- name: Create users
+  user:
+    name: "{{ item.name }}"
+    create_home: yes
+    password: "{{ item.password | password_hash('sha512') }}"
+    shell: /bin/bash
+    state: present
+    groups: sudo
+  loop: "{{ users }}"
+
+- name: Configure SSH
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    state: present
+  loop:
+    - { regexp: '^#?Port', line: 'Port 2002' }
+    - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin no' }
+    - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication no' }
+
+- name: Reboot machine
+  reboot:
+    msg: "Rebooting machine in 5 seconds"

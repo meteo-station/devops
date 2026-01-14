@@ -1,0 +1,17 @@
+---
+- hosts: coin
+  become: yes
+
+  vars_files:
+    - ../../secrets.yml
+    - ../../env.yml
+    - env.yml
+
+  tasks:
+    - name: Clean up unused Docker resources
+      docker_prune:
+        containers: yes
+        images: yes
+        networks: yes
+        volumes: yes
+        builder_cache: yes

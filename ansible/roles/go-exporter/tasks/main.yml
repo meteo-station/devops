@@ -1,0 +1,28 @@
+---
+- name: Copy go-exporter files to the server
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ project_dir }}/{{ item.dest }}"
+  loop:
+    - { src: docker-compose.go-exporter.yml.j2, dest: docker-compose.go-exporter.yml }
+
+- name: Pull new version of go-exporter image
+  command: docker compose -f {{ project_dir }}/docker-compose.go-exporter.yml pull
+  args:
+    chdir: "{{ project_dir }}"
+
+- name: Down go-exporter
+  command: docker compose -f {{ project_dir }}/docker-compose.go-exporter.yml down
+  args:
+    chdir: "{{ project_dir }}"
+
+- name: Run go-exporter
+  command: docker compose -f {{ project_dir }}/docker-compose.go-exporter.yml up -d
+  args:
+    chdir: "{{ project_dir }}"
+  environment:
+    PGSQL_USER: "{{ postgres_user }}"
+    PGSQL_PASSWORD: "{{ postgres_password }}"
+    PGSQL_DATABASE: "{{ postgres_db }}"
+    MOSQUITTO_USER: "{{ mosquitto_user }}"
+    MOSQUITTO_PASSWORD: "{{ mosquitto_password }}"

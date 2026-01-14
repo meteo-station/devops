@@ -1,0 +1,58 @@
+---
+- name: Create global Nginx configuration
+  template:
+    src: nginx.conf.j2
+    dest: "/etc/nginx/nginx.conf"
+
+- name: Create Nginx configuration for each domain
+  template:
+    src: nginx-stream.conf.j2
+    dest: "/etc/nginx/stream-available/{{ item.name }}"
+  loop: "{{ domains }}"
+  when:
+    - item.port is defined
+    - item.type == 'stream'
+
+- name: Enable Nginx configurations
+  file:
+    src: "/etc/nginx/stream-available/{{ item.name }}"
+    dest: "/etc/nginx/stream-enabled/{{ item.name }}"
+    state: link
+  loop: "{{ domains }}"
+  when:
+    - item.port is defined
+    - item.type == 'stream'
+
+- name: Create Nginx configuration for each domain
+  template:
+    src: nginx-site.conf.j2
+    dest: "/etc/nginx/sites-available/{{ item.name }}"
+  loop: "{{ domains }}"
+  when:
+    - item.port is defined
+    - item.type == 'site'
+
+- name: Enable Nginx configurations
+  file:
+    src: "/etc/nginx/sites-available/{{ item.name }}"
+    dest: "/etc/nginx/sites-enabled/{{ item.name }}"
+    state: link
+  loop: "{{ domains }}"
+  when:
+    - item.port is defined
+    - item.type == 'site'
+
+- name: Check NGINX configs
+  shell: "/usr/sbin/nginx -t"
+  register: nginx_config_status
+
+- name: NGINX test status
+  debug:
+    msg: "{{ nginx_config_status }}"
+
+- name: Service NGINX reload
+  systemd:
+    name: nginx
+    state: reloaded
+    daemon_reload: yes
+  when: nginx_config_status.rc == 0

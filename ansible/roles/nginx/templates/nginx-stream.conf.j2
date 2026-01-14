@@ -1,0 +1,14 @@
+server {
+    listen {{ item.listen_port }} ssl;
+    proxy_pass 127.0.0.1:{{ item.port }};
+
+    access_log off;
+
+    ssl_certificate      /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key  /etc/nginx/ssl/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    proxy_timeout 1h;
+    proxy_connect_timeout 5s;
+}

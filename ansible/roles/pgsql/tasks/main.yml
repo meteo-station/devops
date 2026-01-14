@@ -1,0 +1,26 @@
+---
+- name: Copy pgsql files to the server
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ project_dir }}/{{ item.dest }}"
+  loop:
+    - { src: docker-compose.pgsql.yml.j2, dest: docker-compose.pgsql.yml }
+
+- name: Pull new version of pgsql image
+  command: docker compose -f {{ project_dir }}/docker-compose.pgsql.yml pull
+  args:
+    chdir: "{{ project_dir }}"
+
+- name: Down pgsql
+  command: docker compose -f {{ project_dir }}/docker-compose.pgsql.yml down
+  args:
+    chdir: "{{ project_dir }}"
+
+- name: Run pgsql
+  command: docker compose -f {{ project_dir }}/docker-compose.pgsql.yml up -d
+  args:
+    chdir: "{{ project_dir }}"
+  environment:
+    POSTGRES_PASSWORD: "{{ postgres_password }}"
+    POSTGRES_USER: "{{ postgres_user }}"
+    POSTGRES_DB: "{{ postgres_db }}"

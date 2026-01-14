@@ -1,0 +1,49 @@
+##################################
+# Network
+##################################
+
+listener 1883
+protocol mqtt
+
+##################################
+# Security
+##################################
+
+allow_anonymous false
+password_file /mosquitto/config/passwd
+
+# ACL (рекомендуется, даже если 1 пользователь)
+acl_file /mosquitto/config/acl
+
+##################################
+# Persistence
+##################################
+
+persistence true
+persistence_location /mosquitto/data/
+autosave_interval 1800
+
+##################################
+# Limits & Hardening
+##################################
+
+max_connections 1024
+max_inflight_messages 20
+max_queued_messages 1000
+
+##################################
+# Logging
+##################################
+
+log_dest stdout
+log_type error
+log_type warning
+log_type notice
+log_type information
+
+##################################
+# Misc
+##################################
+
+# Не принимать retained от анонимов (на будущее)
+allow_zero_length_clientid false
