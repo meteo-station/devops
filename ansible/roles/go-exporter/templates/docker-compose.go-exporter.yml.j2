@@ -13,11 +13,11 @@ services:
     restart:
       unless-stopped
     networks:
-      - internal
+      - "{{ compose_project_name }}-internal"
     environment:
 
       # POSTGRES
-      PGSQL_HOST: pgsql:5434
+      PGSQL_HOST: pgsql:5432
       PGSQL_USER: ${PGSQL_USER}
       PGSQL_PASSWORD: ${PGSQL_PASSWORD}
       PGSQL_DATABASE: ${PGSQL_DATABASE}
@@ -40,6 +40,12 @@ services:
       # HTTP-ADDRESS
       LISTEN_HTTP: 0.0.0.0:8080
 
+      # OPEN TELEMETRY
+      OTLP_INSECURE: true
+      OTLP_IS_ENABLED: false
+      OTLP_HTTP_ENDPOINT: ""
+
+
 networks:
-  internal:
+  "{{ compose_project_name }}-internal":
     external: true

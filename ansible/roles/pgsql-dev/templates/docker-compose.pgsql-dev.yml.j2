@@ -6,7 +6,7 @@ services:
   pgsql-dev:
     image: wodby/postgres
     networks:
-      - internal
+      - "{{ compose_project_name }}-internal"
     restart:
       unless-stopped
     ports:
@@ -27,5 +27,5 @@ volumes:
   postgres-dev:
 
 networks:
-  internal:
+  "{{ compose_project_name }}-internal":
     external: true

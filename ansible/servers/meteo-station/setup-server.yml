@@ -50,7 +50,3 @@
     - name: Setup go exporter
       import_role:
         name: go-exporter
-
-    - name: Setup go exporter dev
-      import_role:
-        name: go-exporter-dev

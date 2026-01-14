@@ -1,7 +1,7 @@
 ---
 - name: Create network
   docker_network:
-      name: internal
+      name: "{{ compose_project_name }}-internal"
       state: present
       driver: bridge
 
