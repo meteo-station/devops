@@ -1,12 +1,12 @@
 ---
 - name: Initial server setup as root
-  hosts: "{{ target }}"
+  hosts: monitoring
   become: yes
   vars_files:
     - ../secrets.yml
     - ../env.yml
   vars:
-    ansible_user: root
+    ansible_user: bonavi
     ansible_port: 22
     ansible_ssh_private_key_file: ~/.ssh/id_rsa
 

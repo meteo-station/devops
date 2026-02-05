@@ -8,6 +8,15 @@
     groups: sudo
   loop: "{{ users }}"
 
+- name: Add SSH public key for each user
+  ansible.builtin.authorized_key:
+    user: "{{ item.name }}"
+    key: "{{ item.ssh_key_pub }}"
+    state: present
+  loop: "{{ users }}"
+  when: item.ssh_key_pub is defined and item.ssh_key_pub | length > 0
+
+
 - name: Configure SSH
   lineinfile:
     path: /etc/ssh/sshd_config

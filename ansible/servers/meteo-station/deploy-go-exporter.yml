@@ -6,7 +6,7 @@
     - ../../secrets.yml
     - ../../env.yml
     - env.yml
-
+    - secrets.yml
   roles:
     - role: project-environment
     - role: docker-environment
