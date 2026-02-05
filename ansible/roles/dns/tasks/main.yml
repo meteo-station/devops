@@ -1,0 +1,32 @@
+---
+- name: Ensure dnsmasq is installed
+  apt:
+    name: dnsmasq
+    state: present
+
+- name: Disable systemd-resolved DNS stub (Ubuntu)
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/resolved.conf
+    regexp: '^#?DNSStubListener='
+    line: 'DNSStubListener=no'
+  notify: Restart systemd-resolved
+
+- name: Ensure dnsmasq config directory exists
+  ansible.builtin.file:
+    path: /etc/dnsmasq.d
+    state: directory
+
+- name: Configure dnsmasq local domain
+  ansible.builtin.template:
+    src: home.conf.j2
+    dest: /etc/dnsmasq.d/home.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart dnsmasq
+
+- name: Ensure dnsmasq is enabled and running
+  ansible.builtin.service:
+    name: dnsmasq
+    state: started
+    enabled: true

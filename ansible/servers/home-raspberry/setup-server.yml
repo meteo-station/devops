@@ -20,3 +20,28 @@
     - name: Setup docker environment
       import_role:
         name: docker-environment
+
+    - name: Setup nginx
+      import_role:
+        name: nginx
+
+    - name: Generate self signed certificate
+      import_role:
+        name: self_signed_cert
+
+    - name: Update nginx configs
+      import_role:
+        name: nginx
+        tasks_from: update-configs.yml
+
+    - name: Setup DNS
+      import_role:
+        name: dns
+      vars:
+        dnsmasq_domain: home
+        dnsmasq_ip: "{{ ansible_default_ipv4.address }}"
+        dnsmasq_upstream_dns:
+          - 1.1.1.1
+          - 8.8.8.8
+        dnsmasq_cache_size: 1000
+        dnsmasq_log_queries: false

@@ -1,0 +1,22 @@
+version: "3.13"
+
+name: {{compose_project_name}}
+
+services:
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    restart: on-failure
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    networks:
+      - monitoring-internal
+
+networks:
+  monitoring-internal:
+    external: true

@@ -15,7 +15,13 @@ services:
       - prometheus_data:/prometheus
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
+    networks:
+      - monitoring-internal
 
 volumes:
   prometheus_data:
+
+networks:
+  monitoring-internal:
+    external: true

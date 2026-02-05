@@ -1,0 +1,9 @@
+---
+- name: Generate self signed SSL certificate
+  command: >
+    sudo openssl req -x509 -nodes -newkey rsa:2048 \
+      -keyout /etc/nginx/ssl/wildcard.home.key \
+      -out /etc/nginx/ssl/wildcard.home.crt \
+      -days 3650 \
+      -subj "/CN=*.home" \
+      -addext "subjectAltName=DNS:*.home,DNS:home"

@@ -17,20 +17,17 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
     networks:
-      - "{{ compose_project_name }}-internal"
-      - meteoStation-internal
+      - monitoring-internal
 
   renderer:
     image: grafana/grafana-image-renderer:latest
     restart: unless-stopped
     networks:
-      - "{{ compose_project_name }}-internal"
+      - monitoring-internal
 
 volumes:
   grafana_data:
 
 networks:
-  meteoStation-internal:
-    external: true
-  "{{ compose_project_name }}-internal":
+  monitoring-internal:
     external: true

@@ -1,4 +1,3 @@
----
 - name: Copy node_exporter files to the server
   template:
     src: "{{ item.src }}"
@@ -6,12 +5,17 @@
   loop:
     - { src: docker-compose.node_exporter.yml.j2, dest: docker-compose.node_exporter.yml }
 
-- name: Run node_exporter down
-  command: docker service rm ssp_node_exporter
+- name: Pull new version of node_exporter image
+  command: docker compose -f {{ project_dir }}/docker-compose.node_exporter.yml pull
+  args:
+    chdir: "{{ project_dir }}"
+
+- name: Down node_exporter
+  command: docker compose -f {{ project_dir }}/docker-compose.node_exporter.yml down
   args:
     chdir: "{{ project_dir }}"
 
 - name: Run node_exporter
-  command: docker stack deploy --with-registry-auth -c {{ project_dir }}/docker-compose.yml -c {{ project_dir }}/docker-compose.node_exporter.yml {{ cluster }}
+  command: docker compose -f {{ project_dir }}/docker-compose.node_exporter.yml up -d
   args:
     chdir: "{{ project_dir }}"

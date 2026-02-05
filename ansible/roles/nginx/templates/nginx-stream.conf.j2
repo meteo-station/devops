@@ -4,8 +4,8 @@ server {
 
     access_log off;
 
-    ssl_certificate      /etc/nginx/ssl/fullchain.pem;
-    ssl_certificate_key  /etc/nginx/ssl/privkey.pem;
+    ssl_certificate {{ item.ssl_certificate_path }};
+    ssl_certificate_key {{ item.ssl_key_path }};
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
 

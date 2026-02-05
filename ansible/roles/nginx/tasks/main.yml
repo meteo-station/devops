@@ -43,14 +43,14 @@
     state: directory
     mode: '0755'
 
-- name: Create symlink for SSL directory
-  file:
-    src: "/etc/letsencrypt/live/{{ main_domain }}/{{ item.file }}"
-    dest:  "/etc/nginx/ssl/{{ item.file }}"
-    state: link
-  loop:
-    - { file: "fullchain.pem" }
-    - { file: "privkey.pem" }
+#- name: Create symlink for SSL directory
+#  file:
+#    src: "/etc/letsencrypt/live/{{ main_domain }}/{{ item.file }}"
+#    dest:  "/etc/nginx/ssl/{{ item.file }}"
+#    state: link
+#  loop:
+#    - { file: "fullchain.pem" }
+#    - { file: "privkey.pem" }
 
 - name: Check NGINX configs
   shell: "/usr/sbin/nginx -t"
