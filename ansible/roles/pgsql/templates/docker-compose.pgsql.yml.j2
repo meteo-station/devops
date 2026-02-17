@@ -7,6 +7,7 @@ services:
     image: wodby/postgres
     networks:
       - "{{ compose_project_name }}-internal"
+      - monitoring-internal
     restart:
       unless-stopped
     ports:
@@ -22,10 +23,14 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres:/var/lib/postgresql/data
+      - ./pgsql/init.sql.j2:/docker-entrypoint-initdb.d/init.sql.j2
+
 
 volumes:
   postgres:
 
 networks:
   "{{ compose_project_name }}-internal":
+    external: true
+  monitoring-internal:
     external: true

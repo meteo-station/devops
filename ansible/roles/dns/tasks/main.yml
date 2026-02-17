@@ -30,3 +30,15 @@
     name: dnsmasq
     state: started
     enabled: true
+
+- name: Set local DNS in Netplan
+  ansible.builtin.copy:
+    content: |
+      network:
+        version: 2
+        ethernets:
+          eth0:
+            nameservers:
+              addresses: [127.0.0.1]
+    dest: /etc/netplan/01-netcfg.yaml
+  notify: Apply netplan

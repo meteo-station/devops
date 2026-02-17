@@ -43,6 +43,6 @@
       import_role:
         name: node_exporter
 
-    - name: Setup Cadvisor
+    - name: Setup cAdvisor
       import_role:
         name: cadvisor

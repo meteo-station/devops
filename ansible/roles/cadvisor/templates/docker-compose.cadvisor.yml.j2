@@ -5,7 +5,7 @@ name: {{compose_project_name}}
 services:
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
-    restart: on-failure
+    restart: unless-stopped
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro

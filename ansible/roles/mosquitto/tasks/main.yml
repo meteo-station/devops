@@ -18,7 +18,7 @@
 - name: Copy configuration files
   template:
     src: "{{ item.src }}"
-    dest: "{{ project_dir }}/mosquitto/{{ item.dest }}"
+    dest: "{{ project_dir }}/mosquitto/config/{{ item.dest }}"
   loop:
     - { src: acl.j2, dest: acl }
     - { src: passwd.j2, dest: passwd }

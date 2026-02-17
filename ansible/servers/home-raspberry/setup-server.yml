@@ -45,3 +45,19 @@
           - 8.8.8.8
         dnsmasq_cache_size: 1000
         dnsmasq_log_queries: false
+
+    - name: Setup HomeBridge
+      import_role:
+        name: home-bridge
+
+    - name: Setup postgresql
+      import_role:
+        name: pgsql
+
+    - name: Setup mosquitto
+      import_role:
+        name: mosquitto
+
+    - name: Setup go exporter
+      import_role:
+        name: go-exporter
