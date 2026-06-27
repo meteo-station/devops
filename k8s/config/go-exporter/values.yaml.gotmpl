@@ -1,0 +1,53 @@
+image:
+  repository: ghcr.io/meteo-station/go-exporter
+  tag: {{ env "APP_VERSION" | default "latest" }}
+
+replicaCount: 1
+
+imagePullSecrets:
+  - name: ghcr-credentials
+
+service:
+  enabled: true
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+
+ingresses:
+  - name: main
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: selfsigned-home
+    hosts:
+      - host: exporter.home
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - hosts: [exporter.home]
+        secretName: exporter-home-tls
+
+envs:
+  PGSQL_HOST: postgres-postgresql.postgres-prod.svc.cluster.local:5432
+  PGSQL_DATABASE: meteo_station
+  MOSQUITTO_HOST: tcp://mosquitto.mosquitto.svc.cluster.local:1883
+  MOSQUITTO_CLIENT_ID: go-exporter
+  SERVICE_NAME: meteo-station
+  ENVIRONMENT: prod
+  STACK_TRACE_ENABLED: "true"
+  LOG_LEVEL: debug
+  LOG_FORMAT: json
+  LISTEN_HTTP: 0.0.0.0:8080
+  OTLP_INSECURE: "true"
+  OTLP_IS_ENABLED: "false"
+  OTLP_HTTP_ENDPOINT: ""
+  HOMEBRIDGE_WEBHOOK_URL: http://home-bridge.home-bridge.svc.cluster.local:51828
+
+secretEnv:
+  PGSQL_USER: "meteo_station"
+  PGSQL_PASSWORD: "{{ .Values.pgsql.users.meteo_station.password }}"
+  MOSQUITTO_USER: "{{ .Values.mosquitto.user }}"
+  MOSQUITTO_PASSWORD: "{{ .Values.mosquitto.password }}"

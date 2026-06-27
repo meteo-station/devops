@@ -1,0 +1,90 @@
+image:
+  repository: eclipse-mosquitto
+  tag: "2"
+
+replicaCount: 1
+
+hostNetwork: true
+
+# fsGroup=1883 (gid mosquitto) → ConfigMap-файлы получат группу mosquitto.
+# С defaultMode 0640 их сможет прочитать процесс mosquitto по group-биту,
+# не выдавая права наружу.
+podSecurityContext:
+  fsGroup: 1883
+
+command: ["mosquitto"]
+args: ["-c", "/mosquitto/config/mosquitto.conf"]
+
+service:
+  enabled: true
+  type: ClusterIP
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: 1883
+
+extraConfigMaps:
+  config:
+    data:
+      mosquitto.conf: |
+        listener 1883
+        protocol mqtt
+
+        allow_anonymous false
+        password_file /mosquitto/config/passwd
+        acl_file /mosquitto/config/acl
+
+        persistence true
+        persistence_location /mosquitto/data
+        autosave_interval 1800
+
+        max_connections 1024
+        max_inflight_messages 20
+        max_queued_messages 1000
+
+        log_dest stdout
+        log_type error
+        log_type warning
+        log_type notice
+        log_type information
+
+        allow_zero_length_clientid false
+      acl: |
+        user esp-meteo-station
+        topic write esp-meteo-station/+/data
+
+        user go-exporter
+        topic read esp-meteo-station/+/data
+
+        user admin
+        topic readwrite #
+      passwd: |
+        esp-meteo-station:$7$101$FNcU1bOhiQp9Tcy9$RaHdBWF5phW07PpH4pGEPFvA70vRPMeOIzyAguQP9AO/Hlghx8Mjdabs646FJW2/V5Z0eKviLAvrtMG6TBkuBQ==
+        go-exporter:$7$101$rbXRWcMykeoCRv1v$hap3lSVcAkaYdNNhkWmayOK8b9L0GuWxjBt1ab6LMSQ5rOzl6iu06ezxIr3EeYBHtp3V9Km8Zu0xpTamdlCYkA==
+        admin:$7$101$K2Gs1wn84lsGN6/v$pwkCyTYsSERQB290bXpn+N3tUVTT0O7QUhk6lGOk4uDgt+v0nAY5ol/sJgCnC6itAFBvxXS1ttLZ/43GYCkdyw==
+
+volumes:
+  - name: config
+    configMap:
+      name: mosquitto-config
+      defaultMode: 0640
+  - name: data
+    hostPath:
+      path: /var/lib/mosquitto/data
+      type: DirectoryOrCreate
+
+volumeMounts:
+  # subPath кладёт реальные файлы (не симлинки): mosquitto 2.x открывает
+  # passwd/acl с O_NOFOLLOW и отказывается следовать по симлинкам,
+  # которые создаёт обычный ConfigMap-маунт (passwd -> ..data/passwd).
+  - name: config
+    mountPath: /mosquitto/config/mosquitto.conf
+    subPath: mosquitto.conf
+  - name: config
+    mountPath: /mosquitto/config/passwd
+    subPath: passwd
+  - name: config
+    mountPath: /mosquitto/config/acl
+    subPath: acl
+  - name: data
+    mountPath: /mosquitto/data

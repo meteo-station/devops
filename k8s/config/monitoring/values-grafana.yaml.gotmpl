@@ -1,0 +1,82 @@
+# ============================================================
+# Grafana — дашборды и визуализация
+# ============================================================
+grafana:
+  adminPassword: {{ .Values.grafana.adminPassword }}
+
+  env:
+    GF_DATABASE_PASSWORD: {{ .Values.pgsql.users.grafana.password }}
+
+  # Дашборд по умолчанию на главной странице Grafana
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: default
+        folder: ''
+        type: file
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+  grafana.ini:
+    dashboards:
+      default_home_dashboard_path: /var/lib/grafana/dashboards/default/overview.json
+    database:
+      type: postgres
+      host: postgres-postgresql.postgres-prod.svc.cluster.local:5432
+      name: grafana
+      user: grafana
+      password: $__env{GF_DATABASE_PASSWORD}
+      ssl_mode: disable
+
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki-headless.loki.svc.cluster.local:3100
+      access: proxy
+
+  sidecar:
+    dashboards:
+      # Sidecar контейнер следит за ConfigMap'ами с лейблом grafana_dashboard=1
+      # и автоматически подгружает JSON дашборды без перезапуска Grafana
+      enabled: true
+      label: grafana_dashboard
+      folder: /var/lib/grafana/dashboards/default
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      # Автоматический выпуск TLS сертификата через cert-manager
+      cert-manager.io/cluster-issuer: letsencrypt
+    hosts:
+      - grafana.digital-security.pro
+    tls:
+      - secretName: grafana-tls
+        hosts:
+          - grafana.digital-security.pro
+
+  # Дополнительный ingress для доступа из локальной сети (.home)
+  extraObjects:
+    - apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: grafana-home
+        annotations:
+          cert-manager.io/cluster-issuer: selfsigned-home
+      spec:
+        ingressClassName: nginx
+        tls:
+          - hosts: [grafana.home]
+            secretName: grafana-home-tls
+        rules:
+          - host: grafana.home
+            http:
+              paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: monitoring-grafana
+                      port:
+                        number: 80

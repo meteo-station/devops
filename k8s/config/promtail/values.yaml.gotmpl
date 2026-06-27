@@ -1,0 +1,38 @@
+config:
+  clients:
+    # Адрес Loki куда Promtail отправляет логи
+    - url: http://loki-headless.loki.svc.cluster.local:3100/loki/api/v1/push
+
+  snippets:
+    pipelineStages:
+      # Парсим формат CRI (Container Runtime Interface) — стандартный формат логов k8s
+      - cri: {}
+      # Извлекаем поля из JSON лога
+      - json:
+          expressions:
+            level: level
+            message: message
+            systemInfo: systemInfo
+            params: params
+      # Извлекаем env из вложенного объекта systemInfo
+      - json:
+          expressions:
+            env: env
+          source: systemInfo
+      # Извлекаем source из вложенного объекта params
+      - json:
+          expressions:
+            source: source
+          source: params
+      # Промотируем level, env и source в лейблы — позволяет фильтровать в Grafana
+      - labels:
+          level:
+          message:
+          env:
+          source:
+
+    extraRelabelConfigs:
+      # Собираем логи только из dev и prod namespace — игнорируем системные
+      - source_labels: [__meta_kubernetes_namespace]
+        regex: dev|prod
+        action: keep

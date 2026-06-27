@@ -5,7 +5,7 @@
     password: "{{ item.password | password_hash('sha512') }}"
     shell: /bin/bash
     state: present
-    groups: sudo
+    groups: "{{ item.groups | default([]) }}"
   loop: "{{ users }}"
 
 - name: Add SSH public key for each user
@@ -16,6 +16,15 @@
   loop: "{{ users }}"
   when: item.ssh_key_pub is defined and item.ssh_key_pub | length > 0
 
+
+- name: Configure sudoers for user
+  copy:
+    dest: "/etc/sudoers.d/{{ item.name }}"
+    content: "{{ item.sudoers_rules | join('\n') }}\n"
+    mode: '0440'
+    validate: visudo -cf %s
+  loop: "{{ users }}"
+  when: item.sudoers_rules is defined and item.sudoers_rules | length > 0
 
 - name: Configure SSH
   lineinfile:

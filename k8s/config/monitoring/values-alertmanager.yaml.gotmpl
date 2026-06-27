@@ -1,0 +1,97 @@
+# ============================================================
+# Alertmanager — маршрутизация и отправка алертов
+# ============================================================
+alertmanager:
+  enabled: true
+
+  # Шаблоны сообщений, которые монтируются в /etc/alertmanager/config/*.tmpl
+  # и затем используются в receivers через директиву message.
+  templateFiles:
+    telegram.tmpl: |-
+        {{ "{{" }} define "telegram.text" }}
+        {{ "{{" }} $length := len .GroupLabels -}} {{ "{{" }} if ne $length 0 }}
+        <b>Grouped for:</b>
+        {{ "{{" }} range $key,$val := .GroupLabels -}}
+            {{ "{{" }}$key}} = <code>{{ "{{" }}$val}}</code>
+        {{ "{{" }} end -}}
+        {{ "{{" }} end -}}
+        {{ "{{" }}if eq .Status "firing"}}
+        Status: <b>{{ "{{" }}.Status | toUpper}} 🔥</b>
+        {{ "{{" }}end -}}
+        {{ "{{" }}if eq .Status "resolved"}}
+        Status: <b>{{ "{{" }}.Status | toUpper}} ✅</b>
+        {{ "{{" }}end }}
+        <b>Active Alert List:</b>
+        {{ "{{" }}- range $val := .Alerts }}
+          {{ "{{" }}$alertname := index $val.Labels "alertname" -}}
+          Alert: {{ "{{" }} $alertname }}
+          {{ "{{" }}$severity := index $val.Labels "severity" -}}
+          {{ "{{" }}if eq $severity "Warning" -}}
+          Severity: {{ "{{" }}$severity}} ⚠️
+          {{ "{{" }}else if eq $severity "Critical" -}}
+          Severity: {{ "{{" }}$severity}} 🚨
+          {{ "{{" }}else -}}
+          Severity: {{ "{{" }}$severity}}
+          {{ "{{" }} end -}}
+          {{ "{{" }} range $key, $value := $val.Annotations -}}
+          {{ "{{" }} if and (and (ne $key "name") (ne $key "value")) (ne $key "measureUnit") }}
+          {{ "{{" }}$key}}: {{ "{{" }}$value}}
+          {{ "{{" }}- end -}}
+        {{ "{{" }}- end -}}
+        {{ "{{" }}- end -}}
+        {{ "{{" }}- end -}}
+  config:
+    global:
+      # Через сколько времени алерт считается resolved, если прометей перестал его присылать
+      resolve_timeout: 5m
+
+    # Подключаем все .tmpl файлы из директории конфига
+    templates:
+    - '/etc/alertmanager/config/*.tmpl'
+
+    receivers:
+    # Заглушка — алерты попавшие сюда просто игнорируются
+    - name: 'null'
+
+    # Основной получатель — Telegram бот
+    # chat_id — отдельный канал для алертов
+    - name: 'default-receiver'
+      telegram_configs:
+        - bot_token: {{ .Values.alertmanager.telegram_token }}
+          chat_id: {{ .Values.alertmanager.telegram_chat_id }}
+          message_thread_id: {{ .Values.alertmanager.telegram_topic_id }}
+          api_url: 'https://api.telegram.org'
+          parse_mode: 'HTML'
+          message: '{{ "{{" }} template "telegram.text" .}}'
+
+    route:
+      # Алерты группируются по этим лейблам — одно сообщение на группу
+      group_by: ['alertname', 'cluster', 'service']
+      # Ждём 30 сек перед первой отправкой группы (вдруг подтянутся ещё алерты)
+      group_wait: 30s
+      # Ждём 5 мин перед отправкой новых алертов в уже существующую группу
+      group_interval: 5m
+      # Повторяем уведомление каждый час пока алерт не resolved
+      repeat_interval: 1h
+      receiver: default-receiver
+      routes:
+      # Служебный алерт kube-prometheus-stack, используется для ингибиции — глушим
+      - receiver: 'null'
+        matchers:
+          - alertname = "InfoInhibitor"
+      # Алерты с severity=info не требуют немедленного внимания — глушим
+      - match:
+          severity: 'info'
+        receiver: 'null'
+      # Watchdog — это heartbeat алерт от прометея (всегда firing) — глушим
+      - match:
+          alertname: Watchdog
+        receiver: 'null'
+
+    # Если уже есть Critical алерт, не дублируем Warning по тому же поводу
+    inhibit_rules:
+    - source_match:
+        severity: 'critical'
+      target_match:
+        severity: 'warning'
+      equal: ['alertname', 'cluster', 'service']

@@ -1,0 +1,95 @@
+global:
+  dnsNamespace: kube-system
+  clusterDomain: cluster.local
+  dnsService: kube-dns
+
+loki:
+  # Без аутентификации — один тенант
+  auth_enabled: false
+
+  commonConfig:
+    # Один экземпляр — репликация не нужна
+    replication_factor: 1
+
+  schemaConfig:
+    configs:
+      - from: 2024-04-01
+        # tsdb — современный индекс, filesystem — локальное хранилище
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: loki_index_
+          # Новый файл индекса каждые 24 часа
+          period: 24h
+
+  limits_config:
+    # Хранить логи 3 дня
+    retention_period: 72h
+    # Отклонять логи старше 24 часов (защита от случайной заливки старых логов)
+    reject_old_samples: true
+    reject_old_samples_max_age: 24h
+    # 0 = без ограничений на количество стримов
+    max_streams_per_user: 0
+    max_global_streams_per_user: 0
+    # Лимиты на скорость записи в стрим
+    per_stream_rate_limit: 64M
+    per_stream_rate_limit_burst: 128M
+    # Лимиты на скорость ingestion
+    ingestion_rate_mb: 1000
+    ingestion_burst_size_mb: 2000
+    max_entries_limit_per_query: 1000000
+
+  compactor:
+    working_directory: /tmp/loki/retention
+    # Включаем удаление старых данных по retention_period
+    retention_enabled: true
+    retention_delete_delay: 2h
+    delete_request_store: filesystem
+
+  storage:
+    type: filesystem
+
+# Режим single binary — все компоненты в одном поде (подходит для малых кластеров)
+deploymentMode: SingleBinary
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 20Gi
+  resources:
+    limits:
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+# Отключаем кеш (не нужен при single binary)
+chunksCache:
+  enabled: false
+
+# Все остальные компоненты отключены — используем только singleBinary
+backend:
+  replicas: 0
+read:
+  replicas: 0
+write:
+  replicas: 0
+ingester:
+  replicas: 0
+querier:
+  replicas: 0
+queryFrontend:
+  replicas: 0
+queryScheduler:
+  replicas: 0
+distributor:
+  replicas: 0
+compactor:
+  replicas: 0
+indexGateway:
+  replicas: 0
+bloomCompactor:
+  replicas: 0
+bloomGateway:
+  replicas: 0

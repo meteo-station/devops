@@ -1,0 +1,193 @@
+environments:
+  dev:
+    secrets:
+      - "secrets/secrets-dev.yaml"
+  prod:
+    secrets:
+      - "secrets/secrets-prod.yaml"
+
+---
+
+repositories:
+  - name: superset
+    url: https://apache.github.io/superset
+  - name: ingress-nginx
+    url: https://kubernetes.github.io/ingress-nginx
+  - name: jetstack
+    url: https://charts.jetstack.io
+  - name: incubator
+    url: https://charts.helm.sh/incubator
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+  - name: grafana
+    url: https://grafana.github.io/helm-charts
+
+helmDefaults:
+  kubeContext: orbstack
+  # При падении деплоя автоматически откатывает к предыдущей версии —
+  # релиз не застрянет в состоянии failed
+  atomic: true
+
+templates:
+
+  # Сервисы с окружениями (prod/dev) — namespace включает имя окружения,
+  # подгружается общий values и env-специфичный (values-prod.yaml.gotmpl и т.д.)
+  prod_dev:
+    namespace: "{{ .Release.Name }}-{{ .Environment.Name }}"
+    createNamespace: true
+    missingFileHandler: Warn
+    values:
+      - "config/{{ .Release.Name }}/values.yaml.gotmpl"
+      - "config/{{ .Release.Name }}/values-{{ .Environment.Name }}.yaml.gotmpl"
+
+  # Сервисы в одном экземпляре (мониторинг, ingress, cert-manager и др.) —
+  # namespace фиксированный, без суффикса окружения, env-специфичный файл не нужен
+  singleton:
+    namespace: "{{ .Release.Name }}"
+    createNamespace: true
+    missingFileHandler: Warn
+    values:
+      - "config/{{ .Release.Name }}/values.yaml.gotmpl"
+    labels:
+      env: prod
+
+  # Локальные чарты (go-server, envoy, vue-client и др.) —
+  # namespace включает окружение, дополнительно подгружается values.local.yaml из репозитория чарта
+  chart:
+    namespace: "{{ .Environment.Name }}"
+    createNamespace: true
+    missingFileHandler: Warn
+    values:
+      - "config/{{ .Release.Name }}/values.yaml.gotmpl"
+      - "config/{{ .Release.Name }}/values-{{ .Environment.Name }}.yaml.gotmpl"
+
+releases:
+  # Cluster Users
+  - name: cluster-users
+    chart: incubator/raw
+    version: 0.2.5
+    namespace: default
+    inherit:
+      - template: singleton
+
+  # Nginx Ingress
+  - name: ingress-nginx
+    chart: ingress-nginx/ingress-nginx
+    inherit:
+      - template: singleton
+
+  # Cert-manager (CRDs ClusterIssuer/Certificate, конфиг в config/cert-manager/)
+  - name: cert-manager
+    chart: jetstack/cert-manager
+    inherit:
+      - template: singleton
+
+  # Self-signed CA для .home сертификатов
+  - name: selfsigned-issuer
+    chart: incubator/raw
+    namespace: cert-manager
+    version: 0.2.5
+    disableValidationOnInstall: true
+    needs: [cert-manager/cert-manager]
+    inherit:
+      - template: singleton
+
+  # Loki
+  - name: loki
+    chart: grafana/loki
+    inherit:
+      - template: singleton
+    values:
+      - config/loki/values.yaml.gotmpl
+
+  # Promtail
+  - name: promtail
+    chart: grafana/promtail
+    inherit:
+      - template: singleton
+    needs:
+      - loki/loki
+    values:
+      - config/promtail/values.yaml.gotmpl
+
+  # Monitoring
+  - name: monitoring
+    chart: prometheus-community/kube-prometheus-stack
+    disableValidationOnInstall: true
+    needs:
+      - "postgres-{{ .Environment.Name }}/postgres-init"
+    inherit:
+      - template: singleton
+    values:
+      - config/monitoring/values-alertmanager.yaml.gotmpl
+      - config/monitoring/values-grafana.yaml.gotmpl
+      - config/monitoring/values-prometheus.yaml.gotmpl
+      - config/monitoring/values-alerts.yaml.gotmpl
+
+  - name: prometheus-blackbox
+    chart: prometheus-community/prometheus-blackbox-exporter
+    namespace: monitoring
+    labels:
+      env: prod
+    needs:
+      - monitoring/monitoring
+    values:
+      - config/monitoring/values-blackbox.yaml.gotmpl
+
+  - name: grafana-dashboards
+    chart: incubator/raw
+    namespace: monitoring
+    version: 0.2.5
+    labels:
+      env: prod
+    needs:
+      - monitoring/monitoring
+    values:
+      - config/monitoring/dashboards/dashboards-values.yaml.gotmpl
+
+  # Postgresql
+  - name: postgres
+    chart: bitnami/postgresql
+    version: 18.3.0
+    inherit:
+      - template: prod_dev
+
+  - name: postgres-init
+    chart: incubator/raw
+    version: 0.2.5
+    namespace: "postgres-{{ .Environment.Name }}"
+    createNamespace: true
+    needs:
+      - "postgres-{{ .Environment.Name }}/postgres"
+    values:
+      - "config/postgres/init-secret.yaml.gotmpl"
+
+  # Registry Credentials
+  - name: registry-credentials
+    chart: incubator/raw
+    version: 0.2.5
+    inherit:
+      - template: singleton
+
+  # Go Exporter
+  - name: go-exporter
+    chart: ./charts/app
+    namespace: "prod"
+    createNamespace: true
+    needs:
+      - "postgres-{{ .Environment.Name }}/postgres-init"
+      - mosquitto/mosquitto
+    values:
+      - "config/{{ .Release.Name }}/values.yaml.gotmpl"
+
+  # Mosquitto (MQTT broker for meteo-station, hostNetwork)
+  - name: mosquitto
+    chart: ./charts/app
+    inherit:
+      - template: singleton
+
+  # Home Bridge (HomeKit bridge, hostNetwork for mDNS)
+  - name: home-bridge
+    chart: ./charts/app
+    inherit:
+      - template: singleton

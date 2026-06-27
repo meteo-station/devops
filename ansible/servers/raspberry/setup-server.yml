@@ -1,0 +1,9 @@
+---
+- hosts: raspberry
+  become: yes
+
+  tasks:
+
+    - name: Setup k3s
+      import_role:
+        name: k3s

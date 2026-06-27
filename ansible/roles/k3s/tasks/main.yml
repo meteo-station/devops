@@ -1,0 +1,38 @@
+- name: Update apt cache and upgrade packages
+  apt:
+    update_cache: yes
+    upgrade: dist
+
+- name: Disable Swap
+  command: swapoff -a
+  when: ansible_swaptotal_mb > 0
+
+- name: Remove Swap from /etc/fstab
+  lineinfile:
+    path: /etc/fstab
+    regexp: '\sswap\s'
+    state: absent
+
+- name: Install k3s using official script
+  shell: |
+    curl -sfL https://get.k3s.io | sh -s - \
+    --write-kubeconfig-mode 644 \
+    --disable traefik \
+    --disable servicelb
+  environment:
+    INSTALL_K3S_EXEC: "server"
+  args:
+    creates: /usr/local/bin/k3s
+
+- name: Wait for k3s to be ready
+  shell: kubectl get nodes
+  register: nodes_output
+  until: '" Ready " in nodes_output.stdout'
+  retries: 10
+  delay: 5
+
+- name: Get Kubeconfig to local machine
+  fetch:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "~/Desktop/k3s-config.yaml"
+    flat: yes

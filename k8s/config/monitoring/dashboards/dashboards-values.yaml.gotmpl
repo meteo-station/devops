@@ -1,0 +1,30 @@
+resources:
+
+{{- $baseDir := "." }}
+
+{{- $rootFiles := readDir $baseDir }}
+{{- $rootJsonFiles := list }}
+
+{{- range $f := $rootFiles }}
+  {{- if hasSuffix ".json" $f }}
+    {{- $rootJsonFiles = append $rootJsonFiles $f }}
+  {{- end }}
+{{- end }}
+
+{{- if gt (len $rootJsonFiles) 0 }}
+
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: grafana-root-dashboards
+      namespace: monitoring
+      labels:
+        grafana_dashboard: "1"
+
+    data:
+{{- range $f := $rootJsonFiles }}
+      {{ base $f }}: |-
+{{ readFile $f | indent 8 }}
+{{- end }}
+
+{{- end }}

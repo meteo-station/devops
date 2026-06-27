@@ -1,0 +1,20 @@
+# ============================================================
+# PrometheusRule — кастомные правила алертинга
+# ============================================================
+
+additionalPrometheusRulesMap:
+  node-availability:
+    groups:
+    - name: node-availability
+      rules:
+      # Алерт срабатывает если node-exporter на сервере недоступен более 2 минут.
+      # Метрика up проставляется самим прометеем: 1 = скрейп успешен, 0 = недоступен.
+      # Покрывает серверы rumex и ficus (определены в values-prometheus.yaml.gotmpl).
+      - alert: NodeDown
+        expr: up{job="node-exporter"} == 0
+        for: 2m
+        labels:
+          severity: Critical
+        annotations:
+          summary: "Node {{ "{{" }} $labels.instance }} is down"
+          description: "Node exporter on {{ "{{" }} $labels.instance }} has been unreachable for more than 2 minutes"

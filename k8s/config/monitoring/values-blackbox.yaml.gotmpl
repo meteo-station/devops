@@ -1,0 +1,19 @@
+# ============================================================
+# Blackbox exporter — конфиг модулей (применяется к release prometheus-blackbox)
+# ============================================================
+config:
+  modules:
+    # Стандартный модуль — ожидаем любой 2xx ответ
+    http_2xx:
+      prober: http
+      http:
+        valid_status_codes: []  # дефолт: 2xx
+        preferred_ip_protocol: ip4
+
+    # Кастомный модуль для gRPC эндпоинтов — возвращают 415 на HTTP запросы,
+    # так как ожидают бинарный gRPC протокол с Content-Type: application/grpc
+    http_2xx_or_415:
+      prober: http
+      http:
+        valid_status_codes: [200, 201, 204, 415]
+        preferred_ip_protocol: ip4

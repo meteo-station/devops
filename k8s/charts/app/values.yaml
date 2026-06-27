@@ -1,0 +1,193 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: false
+
+replicaCount: 1
+
+hostNetwork: false
+dnsPolicy: ""
+
+deployment:
+  enabled: true
+  revisionHistoryLimit: 5
+  terminationGracePeriodSeconds: 30
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  podAnnotations: {}
+  podLabels: {}
+
+command: []
+args: []
+
+podSecurityContext: {}
+  # runAsNonRoot: true
+  # runAsUser: 1000
+  # fsGroup: 1000
+
+securityContext: {}
+  # allowPrivilegeEscalation: false
+  # readOnlyRootFilesystem: true
+  # capabilities:
+  #   drop: [ALL]
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+service:
+  enabled: true
+  type: ClusterIP
+  annotations: {}
+  clusterIP: ""
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+    - name: grpc
+      port: 8090
+      targetPort: 8090
+
+startupProbe:
+  enabled: false
+  httpGet:
+    path: /healthz
+    port: http
+  failureThreshold: 30
+  periodSeconds: 5
+  timeoutSeconds: 2
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+envs: {}
+secretEnv: {}
+extraEnv: []
+extraEnvFrom: []
+
+extraConfigMaps: {}
+  # envoy-config:
+  #   data:
+  #     envoy.yaml: |
+  #       # supports {{`{{ .Values.foo }}`}} via tpl
+
+volumes: []
+volumeMounts: []
+initContainers: []
+lifecycle: {}
+
+nodeSelector: {}
+affinity: {}
+tolerations: []
+topologySpreadConstraints: []
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+  extraMetrics: []
+  behavior: {}
+    # scaleDown:
+    #   stabilizationWindowSeconds: 300
+    #   policies:
+    #     - type: Percent
+    #       value: 50
+    #       periodSeconds: 60
+
+pdb:
+  enabled: false
+  minAvailable: 1
+  maxUnavailable: ""
+
+ingresses: []
+  # - name: main
+  #   enabled: true
+  #   className: nginx
+  #   annotations:
+  #     cert-manager.io/cluster-issuer: letsencrypt
+  #   hosts:
+  #     - host: example.com
+  #       paths:
+  #         - path: /
+  #           pathType: Prefix
+  #   tls:
+  #     - hosts: [example.com]
+  #       secretName: example-com-tls
+
+ingress:
+  servicePort: ""
+
+networkPolicy:
+  enabled: false
+  policyTypes: [Ingress]
+  ingress: []
+  egress: []
+
+migrations:
+  enabled: false
+  image: ""
+  command: []
+  args: []
+  resources: {}
+  backoffLimit: 2
+  activeDeadlineSeconds: 1800
+  ttlSecondsAfterFinished: 600
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+
+cronjobs: {}
+  # cleanup:
+  #   enabled: true
+  #   schedule: "0 3 * * *"
+  #   timeZone: "UTC"
+  #   concurrencyPolicy: Forbid
+  #   suspend: false
+  #   startingDeadlineSeconds: 120
+  #   backoffLimit: 2
+  #   activeDeadlineSeconds: 1800
+  #   ttlSecondsAfterFinished: 86400
+  #   restartPolicy: OnFailure
+  #   command: ["/app/cleanup"]
+  #   args: ["--older-than=7d"]
+  #   resources:
+  #     requests: { cpu: 100m, memory: 128Mi }
+  #     limits:   { cpu: 200m, memory: 256Mi }

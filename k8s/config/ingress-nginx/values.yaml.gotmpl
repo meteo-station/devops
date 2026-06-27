@@ -1,0 +1,12 @@
+controller:
+  # Используем сеть хоста чтобы nginx слушал порты 80/443 напрямую на ноде
+  hostNetwork: true
+  # DaemonSet чтобы nginx был на каждой ноде кластера
+  kind: DaemonSet
+  # Сохраняем реальные IP клиентов
+  externalTrafficPolicy: Local
+  # ClusterIP вместо LoadBalancer — трафик идёт через hostNetwork
+  service:
+    type: ClusterIP
+  # Нужно для корректного резолва DNS при hostNetwork
+  dnsPolicy: ClusterFirstWithHostNet

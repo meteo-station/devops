@@ -1,0 +1,37 @@
+resources:
+
+  # Корневой self-signed Issuer — выпускает CA-сертификат
+  - apiVersion: cert-manager.io/v1
+    kind: ClusterIssuer
+    metadata:
+      name: selfsigned-bootstrap
+    spec:
+      selfSigned: {}
+
+  # Корневой CA-сертификат для домена .home
+  - apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: home-ca
+      namespace: cert-manager
+    spec:
+      isCA: true
+      commonName: home-ca
+      secretName: home-ca-tls
+      duration: 87600h   # 10 лет
+      privateKey:
+        algorithm: ECDSA
+        size: 256
+      issuerRef:
+        name: selfsigned-bootstrap
+        kind: ClusterIssuer
+        group: cert-manager.io
+
+  # ClusterIssuer на базе home-ca — им подписываем сертификаты для *.home
+  - apiVersion: cert-manager.io/v1
+    kind: ClusterIssuer
+    metadata:
+      name: selfsigned-home
+    spec:
+      ca:
+        secretName: home-ca-tls

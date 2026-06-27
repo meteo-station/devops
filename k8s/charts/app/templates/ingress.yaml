@@ -1,0 +1,40 @@
+{{- $fullName := include "app.fullname" . -}}
+{{- $svcPort := .Values.ingress.servicePort | default (index .Values.service.ports 0).port -}}
+{{- range $idx, $ing := .Values.ingresses }}
+{{- if $ing.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ if $ing.name }}{{ printf "%s-%s" $fullName $ing.name }}{{ else }}{{ $fullName }}{{ end }}
+  labels:
+    {{- include "app.labels" $ | nindent 4 }}
+  {{- with $ing.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $ing.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with $ing.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range $ing.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType | default "ImplementationSpecific" }}
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ .servicePort | default $svcPort }}
+          {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

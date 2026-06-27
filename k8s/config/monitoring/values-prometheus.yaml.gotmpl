@@ -1,0 +1,105 @@
+# ============================================================
+# Prometheus — сбор метрик
+# ============================================================
+
+# Компоненты control plane недоступны для скрейпа в managed k8s —
+# провайдер управляет ими сам и не открывает метрики. Отключаем чтобы не было ложных алертов.
+kubeScheduler:
+  enabled: false
+
+kubeControllerManager:
+  enabled: false
+
+kubeEtcd:
+  enabled: false
+
+kubeProxy:
+  enabled: false
+
+additionalPrometheusRulesMap:
+  endpoint-availability:
+    groups:
+    - name: endpoint-availability
+      rules:
+      # Алерт срабатывает если HTTP probe вернул не 2xx или endpoint недоступен.
+      # probe_success выставляется blackbox exporter: 1 = успех, 0 = провал.
+      - alert: EndpointDown
+        expr: probe_success{job=~"blackbox|blackbox-grpc"} == 0
+        for: 2m
+        labels:
+          severity: Critical
+        annotations:
+          summary: "Endpoint {{ "{{" }} $labels.instance }} is down"
+          description: "{{ "{{" }} $labels.instance }} не отвечает на HTTP запросы более 2 минут"
+
+prometheus:
+  prometheusSpec:
+    # Хранить метрики 14 дней
+    retention: 14d
+    # Жёсткий лимит на размер базы на диске — защита от неожиданного роста
+    retentionSize: 18GB
+
+    # PVC для хранения метрик. Без него данные теряются при рестарте пода.
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+    # Все дополнительные таргеты для скрейпа, не покрытые ServiceMonitor'ами.
+    additionalScrapeConfigs:
+    # Автоматический discovery подов с аннотацией prometheus.io/scrape=true.
+    # Сервис добавляет в pod template аннотации prometheus.io/{scrape,path,port}
+    # и автоматически попадает в скрейп — без правок этого файла.
+    - job_name: kubernetes-pods
+      honor_labels: false
+      kubernetes_sd_configs:
+      - role: pod
+      scrape_interval: 60s
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_container_init]
+        action: drop
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+      metric_relabel_configs:
+      - action: labeldrop
+        regex: pod_template_hash
+
+      # Blackbox — проверка доступности HTTP эндпоинтов снаружи
+    - job_name: 'blackbox'
+      metrics_path: /probe
+      params:
+        module:
+        - http_2xx
+      # Relabeling: передаём target как параметр в blackbox, а запрос направляем на его svc
+      relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - replacement: prometheus-blackbox-prometheus-blackbox-exporter.monitoring.svc.cluster.local:9115
+        target_label: __address__
+      static_configs:
+      - targets:
+        - https://grafana.home

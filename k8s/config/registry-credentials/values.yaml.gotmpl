@@ -1,0 +1,8 @@
+resources:
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: registry-credentials
+    type: kubernetes.io/dockerconfigjson
+    data:
+      .dockerconfigjson: {{ printf "{\"auths\":{\"%s\":{\"auth\":\"%s\"}}}" .Values.image_credentials.registry (printf "%s:%s" .Values.image_credentials.username .Values.image_credentials.password | b64enc) | b64enc | quote }}

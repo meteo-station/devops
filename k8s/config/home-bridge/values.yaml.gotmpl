@@ -1,0 +1,40 @@
+image:
+  repository: homebridge/homebridge
+  tag: latest
+
+replicaCount: 1
+
+hostNetwork: true
+
+service:
+  enabled: true
+  type: ClusterIP
+  ports:
+    - name: ui
+      port: 8581
+      targetPort: 8581
+
+ingresses:
+  - name: ui
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: selfsigned-home
+    hosts:
+      - host: homebridge.home
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - hosts: [homebridge.home]
+        secretName: homebridge-home-tls
+
+volumes:
+  - name: homebridge
+    hostPath:
+      path: /var/lib/homebridge
+      type: DirectoryOrCreate
+
+volumeMounts:
+  - name: homebridge
+    mountPath: /homebridge
