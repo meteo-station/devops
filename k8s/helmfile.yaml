@@ -9,8 +9,6 @@ environments:
 ---
 
 repositories:
-  - name: superset
-    url: https://apache.github.io/superset
   - name: ingress-nginx
     url: https://kubernetes.github.io/ingress-nginx
   - name: jetstack
@@ -23,7 +21,7 @@ repositories:
     url: https://grafana.github.io/helm-charts
 
 helmDefaults:
-  kubeContext: orbstack
+  kubeContext: pi
   # При падении деплоя автоматически откатывает к предыдущей версии —
   # релиз не застрянет в состоянии failed
   atomic: true
@@ -179,6 +177,38 @@ releases:
       - mosquitto/mosquitto
     values:
       - "config/{{ .Release.Name }}/values.yaml.gotmpl"
+
+  - name: backup-vpn
+    chart: ./charts/app
+    namespace: backups
+    createNamespace: true
+    labels: { env: prod }
+    values:
+      - config/backups/vpn/values.yaml.gotmpl
+
+  - name: backup-codex
+    chart: ./charts/app
+    namespace: backups
+    createNamespace: true
+    labels: { env: prod }
+    values:
+      - config/backups/codex/values.yaml.gotmpl
+
+  - name: backup-codex-monitoring
+    chart: ./charts/app
+    namespace: backups
+    createNamespace: true
+    labels: { env: prod }
+    values:
+      - config/backups/codex-monitoring/values.yaml.gotmpl
+
+  - name: backup-coin
+    chart: ./charts/app
+    namespace: backups
+    createNamespace: true
+    labels: { env: prod }
+    values:
+      - config/backups/coin/values.yaml.gotmpl
 
   # Mosquitto (MQTT broker for meteo-station, hostNetwork)
   - name: mosquitto

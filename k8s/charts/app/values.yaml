@@ -101,6 +101,13 @@ extraEnv: []
 extraEnvFrom: []
 
 extraConfigMaps: {}
+
+extraSecrets: {}
+  # kubeconfig:
+  #   stringData:
+  #     config: |
+  #       apiVersion: v1
+  #       ...
   # envoy-config:
   #   data:
   #     envoy.yaml: |

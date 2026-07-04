@@ -18,3 +18,35 @@ additionalPrometheusRulesMap:
         annotations:
           summary: "Node {{ "{{" }} $labels.instance }} is down"
           description: "Node exporter on {{ "{{" }} $labels.instance }} has been unreachable for more than 2 minutes"
+
+  cronjobs:
+    groups:
+    - name: cronjobs
+      rules:
+      # Любой Job завершился с ошибкой. Метрика приходит от kube-state-metrics.
+      # Покрывает все CronJob'ы во всех namespace.
+      - alert: KubeJobFailed
+        expr: kube_job_failed{job_name!=""} > 0
+        for: 1m
+        labels:
+          severity: Warning
+        annotations:
+          summary: "Job {{ "{{" }} $labels.namespace }}/{{ "{{" }} $labels.job_name }} failed"
+          description: "Kubernetes Job has finished with status=failed. Check `kubectl -n {{ "{{" }} $labels.namespace }} logs job/{{ "{{" }} $labels.job_name }}`."
+
+      # CronJob не завершался успешно дольше 25 часов (бэкапы у нас ежечасные —
+      # 24 + запас). Ловит ситуацию, когда CronJob тихо не отрабатывает (suspended,
+      # нет нод, image pull fail и т.п.).
+      - alert: CronJobNoSuccessfulRun
+        expr: |
+          (time() - max by (namespace, cronjob) (
+            kube_job_status_completion_time
+            * on(namespace, job_name) group_left(cronjob)
+              kube_job_owner{owner_kind="CronJob"}
+          )) > 25 * 3600
+        for: 10m
+        labels:
+          severity: Critical
+        annotations:
+          summary: "CronJob {{ "{{" }} $labels.namespace }}/{{ "{{" }} $labels.cronjob }} has no successful run for > 25h"
+          description: "Последний успешный запуск был более суток назад. Проверь расписание, suspend, PodDisruptionBudget и события в namespace."

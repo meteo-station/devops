@@ -18,7 +18,7 @@ write-values-dev:
 
 # Деплой
 deploy-prod:
-	helmfile -e prod apply # -l name=monitoring
+	helmfile -e prod apply -l name=backup-codex
 
 deploy-dev:
 	helmfile -e dev apply -l env!=prod

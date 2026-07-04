@@ -1,0 +1,80 @@
+image:
+  repository: postgres
+  tag: "18-alpine"
+
+deployment:
+  enabled: false
+service:
+  enabled: false
+
+envs:
+  PG_DATABASES: "superset"
+  PG_USER: adrush
+  PG_PORT: "5432"
+  BACKUP_DIR: /backup
+
+secretEnv:
+  PGPASSWORD: "{{ .Values.backups.codex_monitoring.pg_password }}"
+  SSH_HOST: "{{ .Values.backups.codex_monitoring.ssh_host }}"
+  SSH_USER: "{{ .Values.backups.codex_monitoring.ssh_user }}"
+  SSH_PORT: "{{ .Values.backups.codex_monitoring.ssh_port }}"
+
+# Приватный SSH-ключ для туннеля к удалённому postgres — кладётся из SOPS.
+# Имя секрета получится backup-codex_monitoring-ssh_key (release + ключ), совпадает с volumes.secretName ниже.
+extraSecrets:
+  ssh-key:
+    stringData:
+      id_ed25519: |
+{{ .Values.backups.codex_monitoring.ssh_key | indent 8 }}
+
+cronjobs:
+  dump:
+    enabled: true
+    schedule: "15 * * * *"
+    timeZone: "Europe/Moscow"
+    concurrencyPolicy: Forbid
+    activeDeadlineSeconds: 1800
+    ttlSecondsAfterFinished: 86400
+    restartPolicy: OnFailure
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        set -euo pipefail
+        # pg_dump уже есть в postgres:18-alpine; ставим только ssh-клиент
+        apk add --no-cache openssh-client coreutils
+
+        mkdir -p "$BACKUP_DIR"
+        TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+
+        install -m 0400 /ssh/id_ed25519 /tmp/id_ed25519
+        ssh -i /tmp/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          -p "$SSH_PORT" -N -L "5432:127.0.0.1:$PG_PORT" "$SSH_USER@$SSH_HOST" &
+        PF_PID=$!
+        trap 'kill $PF_PID 2>/dev/null || true' EXIT
+
+        for i in $(seq 1 30); do
+          (echo > /dev/tcp/127.0.0.1/5432) >/dev/null 2>&1 && break
+          sleep 1
+        done
+
+        for DB in $PG_DATABASES; do
+          OUT="$BACKUP_DIR/${DB}-${TS}.sql.gz"
+          echo ">>> dumping $DB → $OUT"
+          pg_dump -h 127.0.0.1 -p 5432 -U "$PG_USER" -d "$DB" \
+            --no-owner --no-privileges --clean --if-exists \
+            | gzip -9 > "$OUT"
+        done
+
+        echo "All backups written to $BACKUP_DIR"
+    volumeMounts:
+      - { name: ssh-key, mountPath: /ssh, readOnly: true }
+      - { name: backup,  mountPath: /backup }
+    volumes:
+      - name: ssh-key
+        secret:
+          secretName: backup-codex-monitoring-ssh-key   # key: id_ed25519
+          defaultMode: 0400
+      - name: backup
+        hostPath:
+          path: /mnt/backup/codex-monitoring
+          type: DirectoryOrCreate

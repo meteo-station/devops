@@ -53,6 +53,21 @@ resources:
       resources: ["pods/exec"]
       verbs: ["create"]
 
+  # ClusterRole — минимальные права для бэкап-бота:
+  # найти под за сервисом + сделать port-forward. Ничего больше.
+  # Биндим этот ClusterRole через RoleBinding в один namespace.
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: backuper
+    rules:
+      - apiGroups: [""]
+        resources: ["services", "pods"]
+        verbs: ["get", "list"]
+      - apiGroups: [""]
+        resources: ["pods/portforward"]
+        verbs: ["create"]
+
 {{ range .Values.cluster_users }}
   - apiVersion: v1
     kind: ServiceAccount
@@ -60,6 +75,25 @@ resources:
       name: {{ .name }}
       namespace: default
 
+  {{- if hasKey . "namespaces" }}
+  # Доступ ограничен перечисленными namespace — RoleBinding в каждом из них.
+  {{- $user := . }}
+  {{- range $ns := .namespaces }}
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: {{ $user.name }}
+      namespace: {{ $ns }}
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: {{ $user.role }}
+    subjects:
+    - kind: ServiceAccount
+      name: {{ $user.name }}
+      namespace: default
+  {{- end }}
+  {{- else }}
   - apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -72,6 +106,7 @@ resources:
     - kind: ServiceAccount
       name: {{ .name }}
       namespace: default
+  {{- end }}
 
   - apiVersion: v1
     kind: Secret

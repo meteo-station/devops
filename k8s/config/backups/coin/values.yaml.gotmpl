@@ -1,0 +1,78 @@
+image:
+  repository: postgres
+  tag: "18-alpine"
+
+deployment:
+  enabled: false
+service:
+  enabled: false
+
+envs:
+  REMOTE_NAMESPACE: postgres-prod
+  REMOTE_SERVICE: postgres-postgresql
+  REMOTE_PORT: "5432"
+  PG_DATABASES: "coin,grafana"
+  PG_USER: postgres
+  BACKUP_DIR: /backup
+
+secretEnv:
+  PGPASSWORD: "{{ .Values.backups.coin.pg_password }}"
+
+# Kubeconfig для удалённого coin-кластера — кладётся из SOPS как multiline-строка.
+# Имя получится backup-coin-kubeconfig (release + ключ), совпадает с volumes.secretName ниже.
+extraSecrets:
+  kubeconfig:
+    stringData:
+      config: |
+{{ .Values.backups.coin.kubeconfig | indent 8 }}
+
+cronjobs:
+  dump:
+    enabled: true
+    schedule: "0 * * * *"
+    timeZone: "Europe/Moscow"
+    concurrencyPolicy: Forbid
+    activeDeadlineSeconds: 1800
+    ttlSecondsAfterFinished: 86400
+    restartPolicy: OnFailure
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        set -euo pipefail
+        # pg_dump уже есть в postgres:18-alpine; ставим только kubectl и coreutils
+        apk add --no-cache kubectl coreutils
+
+        mkdir -p "$BACKUP_DIR"
+        TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+
+        export KUBECONFIG=/kube/config
+        kubectl port-forward -n "$REMOTE_NAMESPACE" "svc/$REMOTE_SERVICE" "5432:$REMOTE_PORT" >/tmp/pf.log 2>&1 &
+        PF_PID=$!
+        trap 'kill $PF_PID 2>/dev/null || true' EXIT
+
+        for i in $(seq 1 30); do
+          (echo > /dev/tcp/127.0.0.1/5432) >/dev/null 2>&1 && break
+          sleep 1
+        done
+
+        for DB in $PG_DATABASES; do
+          OUT="$BACKUP_DIR/${DB}-${TS}.sql.gz"
+          echo ">>> dumping $DB → $OUT"
+          pg_dump -h 127.0.0.1 -p 5432 -U "$PG_USER" -d "$DB" \
+            --no-owner --no-privileges --clean --if-exists \
+            | gzip -9 > "$OUT"
+        done
+
+        echo "All backups written to $BACKUP_DIR"
+    volumeMounts:
+      - { name: kubeconfig, mountPath: /kube, readOnly: true }
+      - { name: backup,     mountPath: /backup }
+    volumes:
+      - name: kubeconfig
+        secret:
+          secretName: backup-coin-kubeconfig   # key: config
+          defaultMode: 0400
+      - name: backup
+        hostPath:
+          path: /mnt/backup/coin
+          type: DirectoryOrCreate
