@@ -210,6 +210,14 @@ releases:
     values:
       - config/backups/coin/values.yaml.gotmpl
 
+  - name: backup-codex-clickhouse
+    chart: ./charts/app
+    namespace: backups
+    createNamespace: true
+    labels: { env: prod }
+    values:
+      - config/backups/codex-clickhouse/values.yaml.gotmpl
+
   # Mosquitto (MQTT broker for meteo-station, hostNetwork)
   - name: mosquitto
     chart: ./charts/app

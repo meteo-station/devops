@@ -1,0 +1,96 @@
+image:
+  repository: clickhouse/clickhouse-server
+  tag: "24-alpine"
+
+deployment:
+  enabled: false
+service:
+  enabled: false
+
+envs:
+  CH_DATABASES: "analytics"
+  CH_TABLES: "analytic_aggr_partner_reconciliation"
+  CH_USER: adrush
+  CH_PORT: "9000"
+  BACKUP_DIR: /backup
+
+secretEnv:
+  CHPASSWORD: "{{ .Values.backups.codex_clickhouse.ch_password }}"
+  SSH_HOST: "{{ .Values.backups.codex_clickhouse.ssh_host }}"
+  SSH_USER: "{{ .Values.backups.codex_clickhouse.ssh_user }}"
+  SSH_PORT: "{{ .Values.backups.codex_clickhouse.ssh_port }}"
+
+# Приватный SSH-ключ для туннеля к удалённому ClickHouse — кладётся из SOPS.
+# Имя секрета получится backup-clickhouse-ssh-key (release + ключ), совпадает с volumes.secretName ниже.
+extraSecrets:
+  ssh-key:
+    stringData:
+      id_ed25519: |
+{{ .Values.backups.codex_clickhouse.ssh_key | indent 8 }}
+
+cronjobs:
+  dump:
+    enabled: true
+    schedule: "30 * * * *"
+    timeZone: "Europe/Moscow"
+    concurrencyPolicy: Forbid
+    activeDeadlineSeconds: 1800
+    ttlSecondsAfterFinished: 86400
+    restartPolicy: OnFailure
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        set -euo pipefail
+        # clickhouse-client уже есть в clickhouse-server:24-alpine; ставим только ssh-клиент
+        apk add --no-cache openssh-client coreutils
+
+        mkdir -p "$BACKUP_DIR"
+        TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+
+        install -m 0400 /ssh/id_ed25519 /tmp/id_ed25519
+        ssh -i /tmp/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          -p "$SSH_PORT" -N -L "9000:192.168.50.1:$CH_PORT" "$SSH_USER@$SSH_HOST" &
+        PF_PID=$!
+        trap 'kill $PF_PID 2>/dev/null || true' EXIT
+
+        for i in $(seq 1 30); do
+          (echo > /dev/tcp/127.0.0.1/9000) >/dev/null 2>&1 && break
+          sleep 1
+        done
+
+        CH="clickhouse-client --host 127.0.0.1 --port 9000 --user $CH_USER --password $CHPASSWORD"
+
+        $CH --query "SELECT count() FROM analytics.analytic_aggr_partner_reconciliation"
+
+
+        for DB in $CH_DATABASES; do
+          WORKDIR=$(mktemp -d)
+          if [ -n "$CH_TABLES" ]; then
+            TABLES="$CH_TABLES"
+          else
+            TABLES=$($CH --query "SHOW TABLES FROM $DB")
+          fi
+          for TABLE in $TABLES; do
+            echo ">>> dumping $DB.$TABLE"
+            $CH --query "SHOW CREATE TABLE $DB.\`$TABLE\`" > "$WORKDIR/${TABLE}.schema.sql"
+            $CH --query "SELECT * FROM $DB.\`$TABLE\` FORMAT Native" > "$WORKDIR/${TABLE}.native"
+          done
+          OUT="$BACKUP_DIR/${DB}-${TS}.tar.gz"
+          tar -C "$WORKDIR" -czf "$OUT" .
+          rm -rf "$WORKDIR"
+          echo ">>> $DB → $OUT"
+        done
+
+        echo "All backups written to $BACKUP_DIR"
+    volumeMounts:
+      - { name: ssh-key, mountPath: /ssh, readOnly: true }
+      - { name: backup,  mountPath: /backup }
+    volumes:
+      - name: ssh-key
+        secret:
+          secretName: backup-codex-clickhouse-ssh-key   # key: id_ed25519
+          defaultMode: 0400
+      - name: backup
+        hostPath:
+          path: /mnt/backup/codex-clickhouse
+          type: DirectoryOrCreate

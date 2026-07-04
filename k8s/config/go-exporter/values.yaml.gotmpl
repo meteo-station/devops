@@ -49,5 +49,5 @@ envs:
 secretEnv:
   PGSQL_USER: "meteo_station"
   PGSQL_PASSWORD: "{{ .Values.pgsql.users.meteo_station.password }}"
-  MOSQUITTO_USER: "{{ .Values.mosquitto.user }}"
-  MOSQUITTO_PASSWORD: "{{ .Values.mosquitto.password }}"
+  MOSQUITTO_USER: "{{ .Values.mosquitto.users.go_exporter.user }}"
+  MOSQUITTO_PASSWORD: "{{ .Values.mosquitto.users.go_exporter.password }}"

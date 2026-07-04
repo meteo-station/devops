@@ -23,6 +23,15 @@ service:
       port: 1883
       targetPort: 1883
 
+secretEnv:
+  # Одна строка "user:password" на пользователя (сырой пароль) — сама хэширует
+  # initContainer gen-passwd ниже. Добавить/убрать пользователя = только правка
+  # .Values.mosquitto.users в secrets-prod.yaml, конфиг трогать не нужно.
+  MOSQUITTO_USERS: |
+    {{- range $key, $u := .Values.mosquitto.users }}
+    {{ $u.user }}:{{ $u.password }}
+    {{- end }}
+
 extraConfigMaps:
   config:
     data:
@@ -58,16 +67,37 @@ extraConfigMaps:
 
         user admin
         topic readwrite #
-      passwd: |
-        esp-meteo-station:$7$101$FNcU1bOhiQp9Tcy9$RaHdBWF5phW07PpH4pGEPFvA70vRPMeOIzyAguQP9AO/Hlghx8Mjdabs646FJW2/V5Z0eKviLAvrtMG6TBkuBQ==
-        go-exporter:$7$101$rbXRWcMykeoCRv1v$hap3lSVcAkaYdNNhkWmayOK8b9L0GuWxjBt1ab6LMSQ5rOzl6iu06ezxIr3EeYBHtp3V9Km8Zu0xpTamdlCYkA==
-        admin:$7$101$K2Gs1wn84lsGN6/v$pwkCyTYsSERQB290bXpn+N3tUVTT0O7QUhk6lGOk4uDgt+v0nAY5ol/sJgCnC6itAFBvxXS1ttLZ/43GYCkdyw==
+
+# passwd-файл больше не хранится в git даже в виде хэша — его на каждом старте
+# пода генерирует mosquitto_passwd из MOSQUITTO_USERS (секрет выше) в emptyDir,
+# который потом монтируется в основной контейнер.
+initContainers:
+  - name: gen-passwd
+    image: "eclipse-mosquitto:2"
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        set -euo pipefail
+        touch /generated/passwd
+        echo "$MOSQUITTO_USERS" | while IFS=: read -r USER PASS; do
+          [ -z "$USER" ] && continue
+          mosquitto_passwd -b /generated/passwd "$USER" "$PASS"
+        done
+        chmod 0700 /generated/passwd
+    envFrom:
+      - secretRef:
+          name: mosquitto
+    volumeMounts:
+      - name: generated
+        mountPath: /generated
 
 volumes:
   - name: config
     configMap:
       name: mosquitto-config
       defaultMode: 0640
+  - name: generated
+    emptyDir: {}
   - name: data
     hostPath:
       path: /var/lib/mosquitto/data
@@ -75,16 +105,16 @@ volumes:
 
 volumeMounts:
   # subPath кладёт реальные файлы (не симлинки): mosquitto 2.x открывает
-  # passwd/acl с O_NOFOLLOW и отказывается следовать по симлинкам,
-  # которые создаёт обычный ConfigMap-маунт (passwd -> ..data/passwd).
+  # mosquitto.conf/acl с O_NOFOLLOW и отказывается следовать по симлинкам,
+  # которые создаёт обычный ConfigMap-маунт (файл -> ..data/файл).
   - name: config
     mountPath: /mosquitto/config/mosquitto.conf
     subPath: mosquitto.conf
   - name: config
-    mountPath: /mosquitto/config/passwd
-    subPath: passwd
-  - name: config
     mountPath: /mosquitto/config/acl
     subPath: acl
+  - name: generated
+    mountPath: /mosquitto/config/passwd
+    subPath: passwd
   - name: data
     mountPath: /mosquitto/data
