@@ -11,7 +11,7 @@ envs:
   REMOTE_NAMESPACE: postgres-prod
   REMOTE_SERVICE: postgres-postgresql
   REMOTE_PORT: "5432"
-  PG_DATABASES: "vpn,grafana,superset"
+  PG_DATABASES: "vpn grafana superset"
   PG_USER: postgres
   BACKUP_DIR: /backup
 
@@ -29,7 +29,7 @@ extraSecrets:
 cronjobs:
   dump:
     enabled: true
-    schedule: "30 * * * *"
+    schedule: "0 * * * *"
     timeZone: "Europe/Moscow"
     concurrencyPolicy: Forbid
     activeDeadlineSeconds: 1800
