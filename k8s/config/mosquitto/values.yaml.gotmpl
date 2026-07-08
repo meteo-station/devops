@@ -6,11 +6,12 @@ replicaCount: 1
 
 hostNetwork: true
 
-# fsGroup=1883 (gid mosquitto) → ConfigMap-файлы получат группу mosquitto.
-# С defaultMode 0640 их сможет прочитать процесс mosquitto по group-биту,
-# не выдавая права наружу.
-podSecurityContext:
-  fsGroup: 1883
+# hostNetwork занимает порт 1883 на ноде: при RollingUpdate новый под не может
+# стартовать, пока старый держит порт. Recreate сначала гасит старый под.
+deployment:
+  strategy:
+    type: Recreate
+    rollingUpdate: null
 
 command: ["mosquitto"]
 args: ["-c", "/mosquitto/config/mosquitto.conf"]
@@ -65,6 +66,9 @@ extraConfigMaps:
         user go-exporter
         topic read esp-meteo-station/+/data
 
+        user esp-ac-control
+        topic readwrite #
+
         user admin
         topic readwrite #
 
@@ -78,12 +82,19 @@ initContainers:
     args:
       - |
         set -euo pipefail
+        umask 077
         touch /generated/passwd
+        chmod 0640 /generated/passwd
+
+        # Ставим пароли
         echo "$MOSQUITTO_USERS" | while IFS=: read -r USER PASS; do
           [ -z "$USER" ] && continue
           mosquitto_passwd -b /generated/passwd "$USER" "$PASS"
         done
+
+        chown 1883:0 /generated/passwd
         chmod 0700 /generated/passwd
+
     envFrom:
       - secretRef:
           name: mosquitto
@@ -95,7 +106,10 @@ volumes:
   - name: config
     configMap:
       name: mosquitto-config
-      defaultMode: 0640
+      # 0644, а не 0640: без fsGroup группа файлов — root, а mosquitto читает
+      # их от uid 1883, т.е. только по other-биту. Секретов в mosquitto.conf
+      # и acl нет (пароли лежат в passwd, он 0600).
+      defaultMode: 0644
   - name: generated
     emptyDir: {}
   - name: data

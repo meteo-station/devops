@@ -30,9 +30,3 @@ config:
           message:
           env:
           source:
-
-    extraRelabelConfigs:
-      # Собираем логи только из dev и prod namespace — игнорируем системные
-      - source_labels: [__meta_kubernetes_namespace]
-        regex: dev|prod
-        action: keep
