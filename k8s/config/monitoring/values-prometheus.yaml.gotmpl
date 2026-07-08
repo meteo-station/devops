@@ -85,21 +85,3 @@ prometheus:
       metric_relabel_configs:
       - action: labeldrop
         regex: pod_template_hash
-
-      # Blackbox — проверка доступности HTTP эндпоинтов снаружи
-    - job_name: 'blackbox'
-      metrics_path: /probe
-      params:
-        module:
-        - http_2xx
-      # Relabeling: передаём target как параметр в blackbox, а запрос направляем на его svc
-      relabel_configs:
-      - source_labels: [__address__]
-        target_label: __param_target
-      - source_labels: [__param_target]
-        target_label: instance
-      - replacement: prometheus-blackbox-prometheus-blackbox-exporter.monitoring.svc.cluster.local:9115
-        target_label: __address__
-      static_configs:
-      - targets:
-        - https://grafana.home

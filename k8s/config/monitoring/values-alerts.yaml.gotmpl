@@ -23,16 +23,6 @@ additionalPrometheusRulesMap:
     groups:
     - name: cronjobs
       rules:
-      # Любой Job завершился с ошибкой. Метрика приходит от kube-state-metrics.
-      # Покрывает все CronJob'ы во всех namespace.
-      - alert: KubeJobFailed
-        expr: kube_job_failed{job_name!=""} > 0
-        for: 1m
-        labels:
-          severity: Warning
-        annotations:
-          summary: "Job {{ "{{" }} $labels.namespace }}/{{ "{{" }} $labels.job_name }} failed"
-          description: "Kubernetes Job has finished with status=failed. Check `kubectl -n {{ "{{" }} $labels.namespace }} logs job/{{ "{{" }} $labels.job_name }}`."
 
       # CronJob не завершался успешно дольше 25 часов (бэкапы у нас ежечасные —
       # 24 + запас). Ловит ситуацию, когда CronJob тихо не отрабатывает (suspended,
