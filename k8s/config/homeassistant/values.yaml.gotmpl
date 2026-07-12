@@ -35,9 +35,18 @@ ingresses:
         paths:
           - path: /
             pathType: Prefix
+      # Внешний доступ: coin-1 проксирует сюда через WG, форвардя Host как есть.
+      # Серт селфсайн — coin-1 его не проверяет (proxy-ssl-verify off), нужен
+      # только чтобы rpi-ingress подобрал server-блок по SNI home.bonavii.com.
+      - host: home.bonavii.com
+        paths:
+          - path: /
+            pathType: Prefix
     tls:
       - hosts: [homeassistant.home]
         secretName: homeassistant-home-tls
+      - hosts: [home.bonavii.com]
+        secretName: home-bonavii-rpi-tls
 
 # HA стартует медленно (первый запуск ставит зависимости интеграций),
 # поэтому startupProbe с большим failureThreshold, а liveness — уже после него.
@@ -109,6 +118,13 @@ extraConfigMaps:
             - 10.0.0.0/8
             - 172.16.0.0/12
             - 192.168.0.0/16
+          # Встроенный fail2ban HA. Благодаря trusted_proxies выше HA видит
+          # реальный IP клиента (не адрес прокси-цепочки), поэтому банит именно
+          # атакующего. После login_attempts_threshold неудачных попыток IP
+          # заносится в ip_bans.yaml (лежит в /config -> PVC, переживает рестарт).
+          # Разбанить: удалить строку из /config/ip_bans.yaml и перезапустить под.
+          ip_ban_enabled: true
+          login_attempts_threshold: 5
 
         # Файлы создаёт initContainer ниже: без них !include роняет старт HA,
         # но они нужны, чтобы редакторы автоматизаций/сцен в UI работали.
