@@ -1,0 +1,85 @@
+---
+# roles/wireguard_client/tasks/main.yml
+
+- name: Fail fast if server params are missing
+  ansible.builtin.assert:
+    that:
+      - wireguard_server_public_key | length > 0
+      - wireguard_server_endpoint | length > 0
+    fail_msg: "wireguard_server_public_key и wireguard_server_endpoint обязательны для клиента"
+
+- name: Install WireGuard
+  ansible.builtin.apt:
+    name: wireguard
+    state: present
+    update_cache: true
+
+- name: Ensure config dir exists with restricted permissions
+  ansible.builtin.file:
+    path: "{{ wireguard_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# --- Ключи -----------------------------------------------------------------
+
+- name: Check if private key already exists on host
+  ansible.builtin.stat:
+    path: "{{ wireguard_config_dir }}/privatekey"
+  register: _wg_priv_stat
+
+- name: Generate private key (only if not provided and not already on host)
+  ansible.builtin.shell: umask 077 && wg genkey > {{ wireguard_config_dir }}/privatekey
+  args:
+    creates: "{{ wireguard_config_dir }}/privatekey"
+  when:
+    - wireguard_private_key | length == 0
+    - not _wg_priv_stat.stat.exists
+
+- name: Write provided private key (if passed via var, e.g. from vault)
+  ansible.builtin.copy:
+    content: "{{ wireguard_private_key }}"
+    dest: "{{ wireguard_config_dir }}/privatekey"
+    owner: root
+    group: root
+    mode: "0600"
+  when: wireguard_private_key | length > 0
+
+- name: Derive public key from private key
+  ansible.builtin.shell: wg pubkey < {{ wireguard_config_dir }}/privatekey
+  register: _wg_pub
+  changed_when: false
+
+- name: Read private key content for template
+  ansible.builtin.slurp:
+    src: "{{ wireguard_config_dir }}/privatekey"
+  register: _wg_priv_slurp
+
+- name: Set facts for template
+  ansible.builtin.set_fact:
+    wireguard_private_key_content: "{{ (_wg_priv_slurp.content | b64decode).strip() }}"
+    wireguard_public_key: "{{ _wg_pub.stdout }}"
+
+# --- Конфиг ------------------------------------------------------------------
+
+- name: Deploy wg0.conf
+  ansible.builtin.template:
+    src: wg0.conf.j2
+    dest: "{{ wireguard_config_dir }}/{{ wireguard_interface }}.conf"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: restart wireguard
+
+# --- Автозапуск ------------------------------------------------------------------
+
+- name: Enable and start WireGuard interface
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ wireguard_interface }}"
+    enabled: "{{ wireguard_enabled }}"
+    state: started
+
+- name: Show client public key (add this to server's wireguard_peers)
+  ansible.builtin.debug:
+    msg: "WireGuard CLIENT public key: {{ wireguard_public_key }}"

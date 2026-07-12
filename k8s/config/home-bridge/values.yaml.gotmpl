@@ -6,6 +6,11 @@ replicaCount: 1
 
 hostNetwork: true
 
+deployment:
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+
 service:
   enabled: true
   type: ClusterIP
@@ -13,6 +18,11 @@ service:
     - name: ui
       port: 8581
       targetPort: 8581
+    # Порт child bridge платформы HttpWebHooks (_bridge.port в config.json):
+    # именно сюда go-exporter шлёт HOMEBRIDGE_WEBHOOK_URL.
+    - name: webhooks
+      port: 51829
+      targetPort: 51829
 
 ingresses:
   - name: ui
@@ -29,11 +39,101 @@ ingresses:
       - hosts: [homebridge.home]
         secretName: homebridge-home-tls
 
+extraConfigMaps:
+  config:
+    data:
+      config.json: |
+        {
+          "bridge": {
+            "name": "Homebridge 41DB",
+            "username": "0E:F8:EE:E7:41:DB",
+            "port": 51174,
+            "pin": "321-51-079",
+            "advertiser": "bonjour-hap"
+          },
+          "accessories": [],
+          "platforms": [
+            {
+              "name": "Config",
+              "port": 8581,
+              "platform": "config"
+            },
+            {
+              "https": false,
+              "sensors": [
+                {
+                  "id": "temperature",
+                  "name": "temperature",
+                  "type": "temperature",
+                  "autoRelease": false
+                },
+                {
+                  "id": "humidity",
+                  "name": "humidity",
+                  "type": "humidity",
+                  "autoRelease": false
+                },
+                {
+                  "id": "iaq",
+                  "name": "iaq",
+                  "type": "airquality",
+                  "autoRelease": false
+                }
+              ],
+              "_bridge": {
+                "username": "0E:46:4C:79:C8:61",
+                "port": 51829,
+                "name": "Homebridge Webhooks",
+                "matter": {
+                  "port": 5530,
+                  "enabled": false
+                }
+              },
+              "co2sensors": [
+                {
+                  "id": "co2",
+                  "name": "co2",
+                  "co2_peak_level": 1400
+                }
+              ],
+              "platform": "HttpWebHooks"
+            }
+          ]
+        }
+
+persistence:
+  data:
+    enabled: true
+    size: 2Gi
+    storageClassName: local-path
+
+# config.json — seed, а не источник правды: Homebridge и его UI пишут в этот
+# файл сами (новые аксессуары, изменения из веба), поэтому монтировать его
+# из ConfigMap напрямую нельзя — он был бы read-only. Копируем из /seed в PVC
+# только если файла ещё нет; дальше им владеет под.
+# Правки в этом values не доедут до уже развёрнутого home-bridge —
+# нужно удалить config.json в томе и перезапустить под.
+initContainers:
+  - name: seed-config
+    image: "homebridge/homebridge:latest"
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        set -eu
+        [ -e /homebridge/config.json ] || cp /seed/config.json /homebridge/config.json
+    volumeMounts:
+      - name: homebridge
+        mountPath: /homebridge
+      - name: config
+        mountPath: /seed
+
 volumes:
   - name: homebridge
-    hostPath:
-      path: /var/lib/homebridge
-      type: DirectoryOrCreate
+    persistentVolumeClaim:
+      claimName: home-bridge-data
+  - name: config
+    configMap:
+      name: home-bridge-config
 
 volumeMounts:
   - name: homebridge

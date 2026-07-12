@@ -1,0 +1,18 @@
+# SSH port used by both the sshd hardening drop-in and the fail2ban sshd jail
+ssh_port: 2002
+
+# unattended-upgrades: install security updates automatically.
+# Auto-reboot is off by default — a surprise reboot can interrupt k3s workloads.
+# Turn it on per-host if the node can tolerate an unattended nightly reboot.
+unattended_auto_reboot: false
+unattended_reboot_time: "04:00"
+
+# fail2ban tuning
+fail2ban_bantime: 1h
+fail2ban_findtime: 10m
+fail2ban_maxretry: 5
+# IPs/subnets that are never banned. Add your WireGuard subnet here
+# so the automation can never lock you out of your own tunnel.
+fail2ban_ignoreip:
+  - 127.0.0.1/8
+  - ::1

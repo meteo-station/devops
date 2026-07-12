@@ -18,7 +18,7 @@ write-values-dev:
 
 # Деплой
 deploy-prod:
-	helmfile -e prod apply -l name=mosquitto
+	helmfile -e prod apply -l name=homeassistant
 
 deploy-dev:
 	helmfile -e dev apply -l env!=prod

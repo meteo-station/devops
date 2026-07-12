@@ -113,6 +113,15 @@ extraSecrets: {}
   #     envoy.yaml: |
   #       # supports {{`{{ .Values.foo }}`}} via tpl
 
+# PVC создаются по имени <fullname>-<ключ>; сослаться на них нужно вручную
+# в volumes через persistentVolumeClaim.claimName.
+persistence: {}
+  # data:
+  #   enabled: true
+  #   size: 5Gi
+  #   storageClassName: local-path
+  #   accessModes: [ReadWriteOnce]
+
 volumes: []
 volumeMounts: []
 initContainers: []

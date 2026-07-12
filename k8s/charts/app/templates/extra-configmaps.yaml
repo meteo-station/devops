@@ -10,6 +10,12 @@ metadata:
 data:
   {{- range $key, $value := $cm.data }}
   {{ $key }}: |
+    {{- if $cm.raw }}
+    {{- /* raw: содержимое отдаётся как есть. Нужно там, где {{ }} принадлежат
+           не Helm, а целевому приложению — например Jinja в Home Assistant. */}}
+    {{- $value | toString | nindent 4 }}
+    {{- else }}
     {{- tpl ($value | toString) $root | nindent 4 }}
+    {{- end }}
   {{- end }}
 {{- end }}

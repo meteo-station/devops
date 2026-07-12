@@ -1,0 +1,22 @@
+---
+# roles/wireguard_client/defaults/main.yml
+
+wireguard_interface: wg0
+wireguard_config_dir: /etc/wireguard
+
+# Адрес этого клиента в WG-сети
+wireguard_address: "10.10.10.2/24"
+
+# Если пусто — роль сгенерирует ключи сама, приватный ключ остаётся только на Pi.
+wireguard_private_key: ""
+
+# Параметры сервера, к которому подключается клиент
+wireguard_server_public_key: ""          # обязателен
+wireguard_server_endpoint: ""            # "vps.example.com:51820"
+wireguard_server_allowed_ips:            # что именно роутить через туннель
+  - "10.10.10.1/32"
+
+# 25 сек — стандартное значение, чтобы NAT-запись на домашнем роутере не протухала
+wireguard_persistent_keepalive: 25
+
+wireguard_enabled: true

@@ -229,3 +229,11 @@ releases:
     chart: ./charts/app
     inherit:
       - template: singleton
+
+  # Home Assistant (hostNetwork for mDNS/SSDP device discovery)
+  - name: homeassistant
+    chart: ./charts/app
+    needs:
+      - mosquitto/mosquitto
+    inherit:
+      - template: singleton

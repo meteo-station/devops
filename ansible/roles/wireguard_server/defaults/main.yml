@@ -1,0 +1,27 @@
+---
+# roles/wireguard_server/defaults/main.yml
+
+wireguard_interface: wg0
+wireguard_config_dir: /etc/wireguard
+
+# Адрес сервера в WG-сети
+wireguard_address: "10.10.10.1/24"
+wireguard_listen_port: 51820
+
+# Если пусто — роль сгенерирует ключи сама и оставит их только на этой машине.
+# Приватный ключ никогда не выводится в лог и никуда не передаётся.
+wireguard_private_key: ""
+
+# Список клиентов (пиров), которым разрешено подключаться.
+# Публичные ключи клиентов узнаются после первого прогона роли wireguard_client
+# (см. вывод "WireGuard client public key" в конце) и прописываются сюда вручную,
+# либо через group_vars/host_vars.
+#
+# wireguard_peers:
+#   - name: raspberry-pi
+#     public_key: "ABCDEF...="
+#     allowed_ips: ["10.10.10.2/32"]
+wireguard_peers: []
+
+wireguard_manage_firewall: true
+wireguard_enabled: true

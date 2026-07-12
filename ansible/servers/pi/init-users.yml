@@ -1,11 +1,10 @@
 ---
 - name: Initial server setup
-  hosts: raspberry
+  hosts: pi
   become: yes
   vars:
     ansible_user: bonavi
-    ansible_password: qwerty
-    ansible_port: 22
+    ansible_port: 2002
     ansible_ssh_private_key_file: ~/.ssh/id_ed25519_bonavi
 
   roles:

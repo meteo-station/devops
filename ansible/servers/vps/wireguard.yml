@@ -1,0 +1,7 @@
+---
+- name: Configure WireGuard server (VPS)
+  hosts: vps
+  become: yes
+
+  roles:
+    - role: wireguard_server

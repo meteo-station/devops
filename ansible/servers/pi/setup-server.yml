@@ -1,9 +1,7 @@
 ---
-- hosts: raspberry
+- hosts: pi
   become: yes
-
   tasks:
-
     - name: Setup k3s
       import_role:
         name: k3s

@@ -102,6 +102,12 @@ initContainers:
       - name: generated
         mountPath: /generated
 
+persistence:
+  data:
+    enabled: true
+    size: 1Gi
+    storageClassName: local-path
+
 volumes:
   - name: config
     configMap:
@@ -113,9 +119,8 @@ volumes:
   - name: generated
     emptyDir: {}
   - name: data
-    hostPath:
-      path: /var/lib/mosquitto/data
-      type: DirectoryOrCreate
+    persistentVolumeClaim:
+      claimName: mosquitto-data
 
 volumeMounts:
   # subPath кладёт реальные файлы (не симлинки): mosquitto 2.x открывает

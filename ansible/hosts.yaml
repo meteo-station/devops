@@ -5,5 +5,9 @@ all:
     ansible_ssh_private_key_file: "~/.ssh/id_ed25519_bonavi"
 
   hosts:
-    raspberry:
-      ansible_host: 192.168.0.15
+    pi:
+      ansible_host: 192.168.0.11
+
+    vps:
+      ansible_host: coin-1.bonavii.com
+      ansible_ssh_private_key_file: "~/.ssh/id_ed25519_devops_coin"

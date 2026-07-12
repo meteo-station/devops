@@ -1,0 +1,29 @@
+{{- $root := . -}}
+{{- range $name, $pvc := .Values.persistence }}
+{{- if $pvc.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-%s" (include "app.fullname" $root) $name }}
+  labels:
+    {{- include "app.labels" $root | nindent 4 }}
+  annotations:
+    # Helm не удаляет PVC ни при откате (helmDefaults.atomic), ни при uninstall.
+    # storageClass local-path идёт с reclaimPolicy: Delete, поэтому без этого
+    # неудачный апгрейд забрал бы данные с собой.
+    helm.sh/resource-policy: keep
+    {{- with $pvc.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  accessModes:
+    {{- toYaml (default (list "ReadWriteOnce") $pvc.accessModes) | nindent 4 }}
+  {{- if $pvc.storageClassName }}
+  storageClassName: {{ $pvc.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ required (printf "persistence.%s.size is required" $name) $pvc.size }}
+{{- end }}
+{{- end }}
