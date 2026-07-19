@@ -167,17 +167,6 @@ releases:
     inherit:
       - template: singleton
 
-  # Go Exporter
-  - name: go-exporter
-    chart: ./charts/app
-    namespace: "prod"
-    createNamespace: true
-    needs:
-      - "postgres-{{ .Environment.Name }}/postgres-init"
-      - mosquitto/mosquitto
-    values:
-      - "config/{{ .Release.Name }}/values.yaml.gotmpl"
-
   - name: backup-vpn
     chart: ./charts/app
     namespace: backups
@@ -224,9 +213,12 @@ releases:
     inherit:
       - template: singleton
 
-  # Home Bridge (HomeKit bridge, hostNetwork for mDNS)
-  - name: home-bridge
+  # Telegraf (MQTT -> агрегация 1m -> postgres)
+  - name: telegraf
     chart: ./charts/app
+    needs:
+      - mosquitto/mosquitto
+      - "postgres-{{ .Environment.Name }}/postgres-init"
     inherit:
       - template: singleton
 

@@ -18,7 +18,7 @@ write-values-dev:
 
 # Деплой
 deploy-prod:
-	helmfile -e prod apply -l name=homeassistant
+	helmfile -e prod apply # -l name=backups
 
 deploy-dev:
 	helmfile -e dev apply -l env!=prod

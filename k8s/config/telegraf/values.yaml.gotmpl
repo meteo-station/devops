@@ -1,0 +1,87 @@
+image:
+  repository: telegraf
+  tag: "1.35"
+
+replicaCount: 1
+
+command: ["telegraf"]
+args: ["--config", "/etc/telegraf/telegraf.conf"]
+
+# Telegraf сам ничего не слушает — метрики только пишет в postgres
+service:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 300m
+    memory: 256Mi
+
+secretEnv:
+  MQTT_USER: "{{ .Values.mosquitto.users.telegraf.user }}"
+  MQTT_PASSWORD: "{{ .Values.mosquitto.users.telegraf.password }}"
+  PG_CONNECTION: "postgres://telegraf:{{ .Values.pgsql.users.telegraf.password }}@postgres-postgresql.postgres-prod.svc.cluster.local:5432/telegraf?sslmode=disable"
+
+extraConfigMaps:
+  config:
+    data:
+      telegraf.conf: |
+        [agent]
+          interval = "10s"
+          flush_interval = "10s"
+          # Метрики уже агрегированы окном в минуту, буфер держим с запасом
+          metric_buffer_limit = 100000
+          omit_hostname = true
+
+        # ── Вход: голое число из MQTT ──────────────────────────────────────
+        [[inputs.mqtt_consumer]]
+          servers = ["tcp://mosquitto.mosquitto.svc.cluster.local:1883"]
+          topics = ["esp-meteo-station/+/+/+"]
+          username = "${MQTT_USER}"
+          password = "${MQTT_PASSWORD}"
+          client_id = "telegraf"
+          qos = 1
+          # Без persistent session: при рестарте догонять историю не нужно
+          persistent_session = false
+
+          name_override = "meteo"
+          # Станция публикует по топику на метрику, payload — голое число,
+          # поэтому парсер "value", а не "json". Смысл значения несёт топик,
+          # а не имя поля: раньше поля приходили из ключей JSON, теперь из
+          # topic_parsing ниже.
+          data_format = "value"
+          data_type = "float"
+
+          # esp-meteo-station/<device>/<sensor>/<metric> -> теги.
+          # Схема в postgres из-за этого становится "длинной": вместо колонки
+          # на каждое поле — теги sensor/metric и одно value. Так новые метрики
+          # не требуют ALTER TABLE, а запросы фильтруются по тегам.
+          [[inputs.mqtt_consumer.topic_parsing]]
+            topic = "esp-meteo-station/+/+/+"
+            tags = "_/device/sensor/metric"
+
+        # ── Агрегация: окно 1 минута, среднее ──────────────────────────────
+        [[aggregators.basicstats]]
+          period = "1m"
+          # Сырые точки в postgres не пишем — только агрегаты за окно
+          drop_original = true
+          stats = ["mean"]
+
+        # ── Выход: postgresql ──────────────────────────────────────────────
+        [[outputs.postgresql]]
+          connection = "${PG_CONNECTION}"
+          # Таблица meteo и колонки под новые поля создаются автоматически
+          # (дефолтные create_templates/add_column_templates плагина)
+          tags_as_jsonb = false
+          fields_as_jsonb = false
+
+volumes:
+  - name: config
+    configMap:
+      name: telegraf-config
+
+volumeMounts:
+  - name: config
+    mountPath: /etc/telegraf
