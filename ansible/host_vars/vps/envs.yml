@@ -3,5 +3,5 @@ wireguard_address: "10.10.10.1/24"
 wireguard_listen_port: 51820
 wireguard_peers:
   - name: raspberry-pi
-    public_key: "8dEx++tVn25uRuGXskVywG3X0XKgj0ueRh7thgZDAkM="
+    public_key: "PaADdH4oTYmLq1RcfzlMDbl/QAFybMT6OIGqkRqMNAM="
     allowed_ips: ["10.10.10.2/32"]

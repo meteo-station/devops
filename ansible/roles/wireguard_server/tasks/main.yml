@@ -17,42 +17,26 @@
 
 # --- Ключи -----------------------------------------------------------------
 
-- name: Check if private key already exists on host
-  ansible.builtin.stat:
+# Приватный ключ приходит из ansible-vault (host_vars/<host>/secrets.yml).
+# Генерации на хосте больше нет: ключ, созданный на месте, существовал в одном
+# экземпляре и терялся вместе с диском, а публичный приходилось вычитывать из
+# вывода роли и вручную переносить в env.yml другого хоста.
+- name: Fail fast if private key is not provided from vault
+  ansible.builtin.assert:
+    that:
+      - wireguard_private_key is defined
+      - wireguard_private_key | length == 44
+    fail_msg: >-
+      wireguard_private_key обязателен и должен лежать в host_vars/{{ inventory_hostname }}/secrets.yml
+      (ansible-vault). Сгенерировать новую пару: wg genkey | tee /dev/stderr | wg pubkey
+
+# Ключ подставляется в wg0.conf напрямую (шаблон ниже), отдельный файл
+# privatekey не нужен — убираем оставшийся от прежней схемы, чтобы копия
+# ключа не лежала на диске в двух местах.
+- name: Remove leftover on-host private key file
+  ansible.builtin.file:
     path: "{{ wireguard_config_dir }}/privatekey"
-  register: _wg_priv_stat
-
-- name: Generate private key (only if not provided and not already on host)
-  ansible.builtin.shell: umask 077 && wg genkey > {{ wireguard_config_dir }}/privatekey
-  args:
-    creates: "{{ wireguard_config_dir }}/privatekey"
-  when:
-    - wireguard_private_key | length == 0
-    - not _wg_priv_stat.stat.exists
-
-- name: Write provided private key (if passed via var, e.g. from vault)
-  ansible.builtin.copy:
-    content: "{{ wireguard_private_key }}"
-    dest: "{{ wireguard_config_dir }}/privatekey"
-    owner: root
-    group: root
-    mode: "0600"
-  when: wireguard_private_key | length > 0
-
-- name: Derive public key from private key
-  ansible.builtin.shell: wg pubkey < {{ wireguard_config_dir }}/privatekey
-  register: _wg_pub
-  changed_when: false
-
-- name: Read private key content for template
-  ansible.builtin.slurp:
-    src: "{{ wireguard_config_dir }}/privatekey"
-  register: _wg_priv_slurp
-
-- name: Set facts for template
-  ansible.builtin.set_fact:
-    wireguard_private_key_content: "{{ (_wg_priv_slurp.content | b64decode).strip() }}"
-    wireguard_public_key: "{{ _wg_pub.stdout }}"
+    state: absent
 
 # --- Конфиг ------------------------------------------------------------------
 
@@ -63,6 +47,9 @@
     owner: root
     group: root
     mode: "0600"
+  # no_log: в конфиг подставляется приватный ключ, и при --diff / -v Ansible
+  # вывел бы его целиком в терминал и в логи CI.
+  no_log: true
   notify: restart wireguard
 
 # --- Firewall ------------------------------------------------------------------
@@ -82,6 +69,3 @@
     enabled: "{{ wireguard_enabled }}"
     state: started
 
-- name: Show server public key (add this to client's peer config)
-  ansible.builtin.debug:
-    msg: "WireGuard SERVER public key: {{ wireguard_public_key }}"
