@@ -60,11 +60,17 @@ extraConfigMaps:
 
         allow_zero_length_clientid false
       acl: |
+        # Станция публикует по топику на метрику: <id>/<датчик>/<метрика>,
+        # payload — голое число. После префикса три уровня, поэтому +/+/+,
+        # а не прежний одиночный /data.
         user esp-meteo-station
-        topic write esp-meteo-station/+/data
+        topic write esp-meteo-station/+/+/+
 
         user go-exporter
-        topic read esp-meteo-station/+/data
+        topic read esp-meteo-station/+/+/+
+
+        user telegraf
+        topic read esp-meteo-station/+/+/+
 
         user esp-ac-control
         topic readwrite #

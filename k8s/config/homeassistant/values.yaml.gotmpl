@@ -15,6 +15,10 @@ deployment:
   strategy:
     type: Recreate
     rollingUpdate: null
+  # AppArmor-профиль по умолчанию (docker-default) режет обращения к системной
+  # шине хоста, смонтированной ниже, — без unconfined HA не достучится до dbus.
+  podAnnotations:
+    container.apparmor.security.beta.kubernetes.io/homeassistant: unconfined
 
 service:
   enabled: true
@@ -90,223 +94,20 @@ envs:
 
 extraConfigMaps:
   config:
-    # raw: внутри лежат Jinja-шаблоны Home Assistant (value_json в двойных скобках).
-    # Без этого флага чарт прогонит их через tpl и упадёт на "function not defined".
-    # В самих шаблонах ниже скобки обёрнуты в backtick-литерал, иначе их
-    # раскроет helmfile ещё до того, как values доедет до Helm.
+    # raw: внутри лежат Jinja-шаблоны Home Assistant (value_json в двойных
+    # скобках). Без этого флага чарт прогонит их через tpl и упадёт на
+    # "function not defined".
     raw: true
     data:
       # HA пишет в /config свои файлы (.storage, automations.yaml, БД),
-      # поэтому из ConfigMap монтируется только configuration.yaml через subPath —
-      # остальное живёт в PVC и переживает пересоздание пода.
+      # поэтому из ConfigMap монтируется только configuration.yaml через
+      # subPath — остальное живёт в PVC и переживает пересоздание пода.
+      #
+      # Сам конфиг лежит отдельным файлом: так он остаётся валидным YAML,
+      # который читают линтеры и подсветка редактора, и в нём не нужно
+      # экранировать Jinja HA от рендера helmfile.
       configuration.yaml: |
-        default_config:
-
-        homeassistant:
-          name: Home
-          time_zone: Europe/Moscow
-          external_url: "https://homeassistant.home"
-
-        http:
-          server_host: 0.0.0.0
-          server_port: 8123
-          # Запрос приходит от ingress-nginx, реальный клиент — в X-Forwarded-For.
-          # Из-за hostNetwork адрес источника — IP ноды, поэтому доверяем
-          # приватным подсетям: домашней сети и подсетям кластера.
-          use_x_forwarded_for: true
-          trusted_proxies:
-            - 10.0.0.0/8
-            - 172.16.0.0/12
-            - 192.168.0.0/16
-          # Встроенный fail2ban HA. Благодаря trusted_proxies выше HA видит
-          # реальный IP клиента (не адрес прокси-цепочки), поэтому банит именно
-          # атакующего. После login_attempts_threshold неудачных попыток IP
-          # заносится в ip_bans.yaml (лежит в /config -> PVC, переживает рестарт).
-          # Разбанить: удалить строку из /config/ip_bans.yaml и перезапустить под.
-          ip_ban_enabled: true
-          login_attempts_threshold: 5
-
-        # Файлы создаёт initContainer ниже: без них !include роняет старт HA,
-        # но они нужны, чтобы редакторы автоматизаций/сцен в UI работали.
-        automation: !include automations.yaml
-        script: !include scripts.yaml
-        scene: !include scenes.yaml
-
-        # Подключение к брокеру здесь не задаётся: с 2022.6 HA принимает
-        # host/user/password только через config flow (Settings -> Devices ->
-        # Add integration -> MQTT) и хранит их в .storage. В YAML — только сущности.
-        #
-        # Все сенсоры читают один и тот же retained JSON из топика станции.
-        # state_topic с "+" подхватит любую станцию; при второй станции их
-        # сущности склеятся в одну — тогда топики надо развести явно.
-        mqtt:
-          sensor:
-            - name: "Meteo temperature"
-              unique_id: meteo_bme688_temperature
-              state_topic: &meteo_topic "esp-meteo-station/+/data"
-              device_class: temperature
-              state_class: measurement
-              unit_of_measurement: "°C"
-              value_template: "{{`{{ value_json.bme688_t | round(2) }}`}}"
-
-            - name: "Meteo humidity"
-              unique_id: meteo_bme688_humidity
-              state_topic: *meteo_topic
-              device_class: humidity
-              state_class: measurement
-              unit_of_measurement: "%"
-              value_template: "{{`{{ value_json.bme688_h | round(2) }}`}}"
-
-            # Датчик отдаёт 692 — это не hPa на уровне моря (там ~1013).
-            # Если это мм рт. ст., поменяйте unit на mmHg: HA сам приведёт
-            # к системе единиц, но только если unit объявлен честно.
-            - name: "Meteo pressure"
-              unique_id: meteo_bme688_pressure
-              state_topic: *meteo_topic
-              device_class: pressure
-              state_class: measurement
-              unit_of_measurement: "mmHg"
-              value_template: "{{`{{ value_json.bme688_p | round(2) }}`}}"
-
-            - name: "Meteo CO2"
-              unique_id: meteo_bme688_eco2
-              state_topic: *meteo_topic
-              device_class: carbon_dioxide
-              state_class: measurement
-              unit_of_measurement: "ppm"
-              value_template: "{{`{{ value_json.bme688_eco2 | round(0) }}`}}"
-
-            - name: "Meteo VOC"
-              unique_id: meteo_bme688_evoc
-              state_topic: *meteo_topic
-              device_class: volatile_organic_compounds_parts
-              state_class: measurement
-              unit_of_measurement: "ppm"
-              value_template: "{{`{{ value_json.bme688_evoc | round(3) }}`}}"
-
-            # У IAQ нет подходящего device_class (aqi зарезервирован под
-            # индекс EPA 0-500), поэтому только state_class и иконка.
-            - name: "Meteo IAQ"
-              unique_id: meteo_bme688_iaq
-              state_topic: *meteo_topic
-              state_class: measurement
-              icon: mdi:air-filter
-              value_template: "{{`{{ value_json.bme688_iaq | round(1) }}`}}"
-
-            - name: "Meteo gas"
-              unique_id: meteo_bme688_gas_perc
-              state_topic: *meteo_topic
-              state_class: measurement
-              unit_of_measurement: "%"
-              icon: mdi:gas-cylinder
-              value_template: "{{`{{ value_json.bme688_gas_perc | round(1) }}`}}"
-
-            # BSEC калибруется на ходу: 0 = не откалиброван, 3 = точность высокая.
-            # Пока bme688_iaq_acc < 1, значения IAQ/eCO2/VOC считать нельзя.
-            - name: "Meteo IAQ accuracy"
-              unique_id: meteo_bme688_iaq_acc
-              state_topic: *meteo_topic
-              entity_category: diagnostic
-              value_template: "{{`{{ value_json.bme688_iaq_acc }}`}}"
-
-            - name: "Meteo stabilization"
-              unique_id: meteo_bme688_stab_stat
-              state_topic: *meteo_topic
-              entity_category: diagnostic
-              value_template: "{{`{{ value_json.bme688_stab_stat }}`}}"
-
-          # Кондиционер ждёт в топике весь объект целиком, а MQTT-климат HA шлёт
-          # по одному полю за раз. Поэтому все *_command_topic смотрят в один
-          # топик, а каждый *_command_template пересобирает полный JSON:
-          # изменяемое поле берётся из value, остальные дочитываются из атрибутов
-          # самой сущности. Порядок "рендер шаблона" / "обновление optimistic
-          # state" тут не важен: изменяемое поле никогда не читается из state_attr.
-          #
-          # default(..., true) обязателен: до первой команды атрибуты равны None,
-          # и без него в JSON уехали бы null.
-          #
-          # Обратной связи нет — прошивка не публикует своё состояние, поэтому
-          # сущность работает в optimistic-режиме и показывает последнюю
-          # отправленную команду. Если научить ESP публиковать
-          # esp-ac-control/01/state, надо будет добавить mode_state_topic и т.д.
-          climate:
-            - name: "AC"
-              unique_id: ac_01
-              # Все команды уходят в один топик одним JSON-объектом.
-              # У mqtt.climate нет общего command_topic — только пофайловые,
-              # поэтому якорь объявлен на первом из них.
-              mode_command_topic: &ac_set "esp-ac-control/01/set"
-              temperature_command_topic: *ac_set
-              fan_mode_command_topic: *ac_set
-              swing_mode_command_topic: *ac_set
-              swing_horizontal_mode_command_topic: *ac_set
-
-              # retain: false — команда это событие, а не состояние. С retain
-              # кондиционер получал бы старую команду при каждом реконнекте.
-              retain: false
-
-              modes: [ "off", cool, heat, dry, fan_only ]
-              fan_modes: [ Low, Medium, High, Auto ]
-              # ПРОВЕРЬТЕ: какие значения swingv/swingh принимает прошивка.
-              # Здесь предполагается Off/On — если там Auto/Vertical, поправьте.
-              swing_modes: [ "Off", "On" ]
-              swing_horizontal_modes: [ "Off", "On" ]
-
-              min_temp: 16
-              max_temp: 30
-              temp_step: 1
-              temperature_unit: C
-
-              # Каждый шаблон ниже строит один и тот же объект; отличается лишь
-              # тем, какое поле приходит из value, а какое из state_attr.
-              # При value == 'off' в m нет ключа, и mode падает в 'Cool': прошивке
-              # всё равно нужен какой-то режим, а выключение несёт power: false.
-              mode_command_template: "{{`{% set m = {'cool':'Cool','heat':'Heat','dry':'Dry','fan_only':'Fan'} %}{{ {'power': value != 'off', 'mode': m.get(value, 'Cool'), 'temp': state_attr('climate.ac','temperature') | default(24, true) | int, 'fan': state_attr('climate.ac','fan_mode') | default('Medium', true), 'swingv': state_attr('climate.ac','swing_mode') | default('Off', true), 'swingh': state_attr('climate.ac','swing_horizontal_mode') | default('Off', true)} | to_json }}`}}"
-
-              temperature_command_template: "{{`{% set m = {'cool':'Cool','heat':'Heat','dry':'Dry','fan_only':'Fan'} %}{{ {'power': states('climate.ac') != 'off', 'mode': m.get(states('climate.ac'), 'Cool'), 'temp': value | int, 'fan': state_attr('climate.ac','fan_mode') | default('Medium', true), 'swingv': state_attr('climate.ac','swing_mode') | default('Off', true), 'swingh': state_attr('climate.ac','swing_horizontal_mode') | default('Off', true)} | to_json }}`}}"
-
-              fan_mode_command_template: "{{`{% set m = {'cool':'Cool','heat':'Heat','dry':'Dry','fan_only':'Fan'} %}{{ {'power': states('climate.ac') != 'off', 'mode': m.get(states('climate.ac'), 'Cool'), 'temp': state_attr('climate.ac','temperature') | default(24, true) | int, 'fan': value, 'swingv': state_attr('climate.ac','swing_mode') | default('Off', true), 'swingh': state_attr('climate.ac','swing_horizontal_mode') | default('Off', true)} | to_json }}`}}"
-
-              swing_mode_command_template: "{{`{% set m = {'cool':'Cool','heat':'Heat','dry':'Dry','fan_only':'Fan'} %}{{ {'power': states('climate.ac') != 'off', 'mode': m.get(states('climate.ac'), 'Cool'), 'temp': state_attr('climate.ac','temperature') | default(24, true) | int, 'fan': state_attr('climate.ac','fan_mode') | default('Medium', true), 'swingv': value, 'swingh': state_attr('climate.ac','swing_horizontal_mode') | default('Off', true)} | to_json }}`}}"
-
-              swing_horizontal_mode_command_template: "{{`{% set m = {'cool':'Cool','heat':'Heat','dry':'Dry','fan_only':'Fan'} %}{{ {'power': states('climate.ac') != 'off', 'mode': m.get(states('climate.ac'), 'Cool'), 'temp': state_attr('climate.ac','temperature') | default(24, true) | int, 'fan': state_attr('climate.ac','fan_mode') | default('Medium', true), 'swingv': state_attr('climate.ac','swing_mode') | default('Off', true), 'swingh': value} | to_json }}`}}"
-
-        # Встроенный мост в Apple Home — делает то же, что отдельный home-bridge.
-        # Работает поверх hostNetwork: Apple находит мост по mDNS в L2-сети,
-        # через ClusterIP его не видно. Пейринг лежит в .storage (PVC), поэтому
-        # переживает пересоздание пода; при потере тома придётся паровать заново.
-        homekit:
-          - name: "HASS Bridge"
-            # Порт разведён с home-bridge (51174 и 51829), чтобы два моста
-            # могли какое-то время сосуществовать на одной ноде.
-            port: 21063
-            filter:
-              # Экспортируем поимённо: без фильтра HomeKit получит вообще все
-              # сущности, включая диагностические, и Дом захламится.
-              include_entities:
-                - climate.ac
-                - sensor.meteo_temperature
-                - sensor.meteo_humidity
-                - sensor.meteo_co2
-                # meteo_voc сюда не входит: HomeKit-мост принимает VOC только с
-                # device_class volatile_organic_compounds (мкг/м3), а BSEC отдаёт
-                # ppm (volatile_organic_compounds_parts). Нужен пересчёт.
-                # meteo_iaq и gas тоже: у них нет device_class, мост их не поймёт.
-            entity_config:
-              climate.ac:
-                name: Кондиционер
-              sensor.meteo_temperature:
-                name: Температура
-              sensor.meteo_humidity:
-                name: Влажность
-              sensor.meteo_co2:
-                name: CO2
-
-        recorder:
-          purge_keep_days: 30
-
-        logger:
-          default: info
+{{ readFile "files/configuration.yaml" | indent 8 }}
 
 persistence:
   data:
@@ -340,10 +141,21 @@ volumes:
   - name: data
     persistentVolumeClaim:
       claimName: homeassistant-data
+  # Системная шина хоста — через неё HA видит BlueZ (Bluetooth-интеграции)
+  # и прочие сервисы ноды. Как и hostNetwork выше, это осознанный выход за
+  # пределы пода: до сокета в /var/run/dbus ноды из overlay-сети не достучаться.
+  - name: dbus
+    hostPath:
+      path: /var/run/dbus
 
 volumeMounts:
   - name: data
     mountPath: /config
+  # readOnly относится к самой файловой системе; подключение к unix-сокету
+  # это не блокирует, а случайную запись в /var/run/dbus ноды — да.
+  - name: dbus
+    mountPath: /var/run/dbus
+    readOnly: true
   - name: config
     mountPath: /config/configuration.yaml
     subPath: configuration.yaml

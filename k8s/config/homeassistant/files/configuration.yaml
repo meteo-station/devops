@@ -1,0 +1,337 @@
+default_config:
+
+homeassistant:
+  name: Home
+  time_zone: Europe/Moscow
+  # Два эндпоинта: внутренний резолвится только в домашней сети,
+  # внешний идёт через coin-1 (публичный ingress -> WG -> rpi).
+  # HA отдаёт нужный из них клиентам, которые спрашивают "как до меня
+  # достучаться": companion app, HomeKit, интеграции с колбэками.
+  internal_url: "https://homeassistant.home"
+  external_url: "https://home.bonavii.com"
+
+http:
+  server_host: 0.0.0.0
+  server_port: 8123
+  # Запрос приходит от ingress-nginx, реальный клиент — в X-Forwarded-For.
+  # Из-за hostNetwork адрес источника — IP ноды, поэтому доверяем
+  # приватным подсетям: домашней сети и подсетям кластера.
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+  # Встроенный fail2ban HA. Благодаря trusted_proxies выше HA видит
+  # реальный IP клиента (не адрес прокси-цепочки), поэтому банит именно
+  # атакующего. После login_attempts_threshold неудачных попыток IP
+  # заносится в ip_bans.yaml (лежит в /config -> PVC, переживает рестарт).
+  # Разбанить: удалить строку из /config/ip_bans.yaml и перезапустить под.
+  ip_ban_enabled: true
+  login_attempts_threshold: 3
+
+# Файлы создаёт initContainer ниже: без них !include роняет старт HA,
+# но они нужны, чтобы редакторы автоматизаций/сцен в UI работали.
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+
+# Подключение к брокеру здесь не задаётся: с 2022.6 HA принимает
+# host/user/password только через config flow (Settings -> Devices ->
+# Add integration -> MQTT) и хранит их в .storage. В YAML — только сущности.
+#
+# Станция публикует каждую метрику в свой топик <база>/<датчик>/<метрика>,
+# payload — голое число. Поэтому сенсоры описаны не через mqtt.sensor, а как
+# trigger-based template-сущности: mqtt.sensor умеет только value_template по
+# состоянию, а нам нужен ещё и атрибут-категория, посчитанный из того же
+# значения. Триггер даёт и то, и другое в одной сущности.
+#
+# Почему не один JSON на все метрики, как было раньше: прошивка публикует
+# значение только когда датчик реально его отдал (а BSEC-поля — ещё и когда
+# сошлась калибровка). В общем JSON это выглядело как то появляющийся, то
+# исчезающий ключ, и шаблоны падали на "dict object has no attribute",
+# сбрасывая состояние. Здесь отсутствие данных — это просто отсутствие
+# сообщения, а retained хранит последнее известное значение, так что после
+# рестарта HA сущности наполняются сразу при подписке.
+#
+# unique_id у всех сохранены от прежних mqtt-сущностей: HA сопоставляет
+# сущности именно по ним, поэтому история и привязки в HomeKit не порвутся.
+template:
+  - trigger:
+      - trigger: mqtt
+        topic: "esp-meteo-station/+/bme688/t"
+    sensor:
+      - name: "Meteo temperature"
+        unique_id: meteo_bme688_temperature
+        device_class: temperature
+        state_class: measurement
+        unit_of_measurement: "°C"
+        state: "{{ trigger.payload | float }}"
+        attributes:
+          # Пороги комфорта для жилого помещения.
+          level: >-
+            {% set v = trigger.payload | float %}
+            {{ 'холодно'   if v < 16 else
+               'прохладно' if v < 20 else
+               'комфортно' if v < 25 else
+               'тепло'     if v < 28 else
+               'жарко' }}
+
+  - trigger:
+      - trigger: mqtt
+        topic: "esp-meteo-station/+/bme688/h"
+    sensor:
+      - name: "Meteo humidity"
+        unique_id: meteo_bme688_humidity
+        device_class: humidity
+        state_class: measurement
+        unit_of_measurement: "%"
+        state: "{{ trigger.payload | float }}"
+        attributes:
+          # 40-60% — диапазон, в котором минимальна выживаемость вирусов и не
+          # пересыхают слизистые; ниже 30% зимой при отоплении дело обычное,
+          # выше 70% начинается риск плесени.
+          level: >-
+            {% set v = trigger.payload | float %}
+            {{ 'сухо'      if v < 30 else
+               'суховато'  if v < 40 else
+               'комфортно' if v < 60 else
+               'влажно'    if v < 70 else
+               'сыро' }}
+
+  # Датчик отдаёт 692 — это не hPa на уровне моря (там ~1013).
+  # Если это мм рт. ст., поменяйте unit на mmHg: HA сам приведёт
+  # к системе единиц, но только если unit объявлен честно.
+  #
+  # Категории здесь намеренно нет: "норма" давления зависит от высоты над
+  # уровнем моря, и стандартные пороги дали бы постоянное "низкое". Осмысленна
+  # не величина, а тренд — это отдельная задача (derivative/statistics).
+  - trigger:
+      - trigger: mqtt
+        topic: "esp-meteo-station/+/bme688/p"
+    sensor:
+      - name: "Meteo pressure"
+        unique_id: meteo_bme688_pressure
+        device_class: pressure
+        state_class: measurement
+        unit_of_measurement: "mmHg"
+        state: "{{ trigger.payload | float }}"
+
+  # Источник — SCD41 (NDIR, измеряет CO2 напрямую), а не расчётный
+  # eCO2 от BSEC: тот выводится из сопротивления газового слоя BME688
+  # и реагирует на любую органику, а не на углекислый газ.
+  # unique_id намеренно оставлен старым (meteo_bme688_eco2): он уже
+  # зарегистрирован в HA, и его смена породила бы новую сущность
+  # sensor.meteo_co2_2, оторвав историю и сломав ссылки в homekit.
+  - trigger:
+      - trigger: mqtt
+        topic: "esp-meteo-station/+/scd41/co2"
+    sensor:
+      - name: "Meteo CO2"
+        unique_id: meteo_bme688_eco2
+        device_class: carbon_dioxide
+        state_class: measurement
+        unit_of_measurement: "ppm"
+        state: "{{ trigger.payload | float }}"
+        attributes:
+          # Пороги — бытовая шкала: 1000 ppm это порог ASHRAE для жилых
+          # помещений, выше 1400 начинается заметная сонливость.
+          #
+          # В автоматизациях используйте numeric_state по самому
+          # sensor.meteo_co2, а не эту категорию: он срабатывает один раз на
+          # пересечении порога, тогда как триггер по смене категории даёт
+          # дребезг на границе (999 -> 1001 -> 998 -> ...) и прячет реальный
+          # порог в шаблон.
+          level: >-
+            {% set v = trigger.payload | float %}
+            {{ 'отлично'   if v < 600  else
+               'хорошо'    if v < 800  else
+               'приемлемо' if v < 1000 else
+               'душно'     if v < 1400 else
+               'плохо' }}
+
+  - trigger:
+      - trigger: mqtt
+        topic: "esp-meteo-station/+/bme688/evoc"
+    sensor:
+      - name: "Meteo VOC"
+        unique_id: meteo_bme688_evoc
+        device_class: volatile_organic_compounds_parts
+        state_class: measurement
+        unit_of_measurement: "ppm"
+        state: "{{ trigger.payload | float }}"
+
+  - trigger:
+      - trigger: mqtt
+        topic: "esp-meteo-station/+/bme688/iaq"
+    sensor:
+      # У IAQ нет подходящего device_class (aqi зарезервирован под
+      # индекс EPA 0-500), поэтому только state_class и иконка.
+      - name: "Meteo IAQ"
+        unique_id: meteo_bme688_iaq
+        state_class: measurement
+        icon: mdi:air-filter
+        state: "{{ trigger.payload | float }}"
+        attributes:
+          # Пороги — собственная шкала BSEC, а не EPA AQI: BME688 меряет
+          # суммарную "органику" по сопротивлению газового слоя и частицы не
+          # видит вовсе, так что к индексу EPA эти значения отношения не имеют.
+          level: >-
+            {% set v = trigger.payload | float %}
+            {{ 'отлично'            if v < 51  else
+               'хорошо'             if v < 101 else
+               'слегка загрязнён'   if v < 151 else
+               'умеренно загрязнён' if v < 201 else
+               'сильно загрязнён'   if v < 251 else
+               'очень грязный'      if v < 351 else
+               'крайне грязный' }}
+
+  - trigger:
+      - trigger: mqtt
+        topic: "esp-meteo-station/+/bme688/gas_perc"
+    sensor:
+      - name: "Meteo gas"
+        unique_id: meteo_bme688_gas_perc
+        state_class: measurement
+        unit_of_measurement: "%"
+        icon: mdi:gas-cylinder
+        state: "{{ trigger.payload | float }}"
+
+mqtt:
+
+  # Кондиционер ждёт в топике весь объект целиком, а MQTT-климат HA шлёт
+  # по одному полю за раз. Поэтому все *_command_topic смотрят в один
+  # топик, а каждый *_command_template пересобирает полный JSON:
+  # изменяемое поле берётся из value, остальные дочитываются из атрибутов
+  # самой сущности. Порядок "рендер шаблона" / "обновление optimistic
+  # state" тут не важен: изменяемое поле никогда не читается из state_attr.
+  #
+  # default(..., true) обязателен: до первой команды атрибуты равны None,
+  # и без него в JSON уехали бы null.
+  #
+  # Обратной связи нет — прошивка не публикует своё состояние, поэтому
+  # сущность работает в optimistic-режиме и показывает последнюю
+  # отправленную команду. Если научить ESP публиковать
+  # esp-ac-control/01/state, надо будет добавить mode_state_topic и т.д.
+  climate:
+    - name: "AC"
+      unique_id: ac_01
+      # Все команды уходят в один топик одним JSON-объектом.
+      # У mqtt.climate нет общего command_topic — только пофайловые,
+      # поэтому якорь объявлен на первом из них.
+      mode_command_topic: &ac_set "esp-ac-control/01/set"
+      temperature_command_topic: *ac_set
+      fan_mode_command_topic: *ac_set
+      swing_mode_command_topic: *ac_set
+      swing_horizontal_mode_command_topic: *ac_set
+
+      # retain: false — команда это событие, а не состояние. С retain
+      # кондиционер получал бы старую команду при каждом реконнекте.
+      retain: false
+
+      modes: [ "off", cool, heat, dry, fan_only ]
+      fan_modes: [ Low, Medium, High, Auto ]
+      # ПРОВЕРЬТЕ: какие значения swingv/swingh принимает прошивка.
+      # Здесь предполагается Off/On — если там Auto/Vertical, поправьте.
+      swing_modes: [ "Off", "On" ]
+      swing_horizontal_modes: [ "Off", "On" ]
+
+      min_temp: 16
+      max_temp: 30
+      temp_step: 1
+      temperature_unit: C
+
+      # Каждый шаблон ниже строит один и тот же объект; отличается лишь
+      # тем, какое поле приходит из value, а какое из state_attr.
+      # При value == 'off' в m нет ключа, и mode падает в 'Cool': прошивке
+      # всё равно нужен какой-то режим, а выключение несёт power: false.
+      mode_command_template: >-
+        {% set m = {'cool': 'Cool', 'heat': 'Heat', 'dry': 'Dry', 'fan_only': 'Fan'} -%}
+        {{ {
+             'power':    value != 'off',
+             'mode':     m.get(value, 'Cool'),
+             'temp':     state_attr('climate.ac', 'temperature') | default(24, true) | int,
+             'fan':      state_attr('climate.ac', 'fan_mode') | default('Medium', true),
+             'swingv':   state_attr('climate.ac', 'swing_mode') | default('Off', true),
+             'swingh':   state_attr('climate.ac', 'swing_horizontal_mode') | default('Off', true)
+           } | to_json }}
+
+      temperature_command_template: >-
+        {% set m = {'cool': 'Cool', 'heat': 'Heat', 'dry': 'Dry', 'fan_only': 'Fan'} -%}
+        {{ {
+             'power':    states('climate.ac') != 'off',
+             'mode':     m.get(states('climate.ac'), 'Cool'),
+             'temp':     value | int,
+             'fan':      state_attr('climate.ac', 'fan_mode') | default('Medium', true),
+             'swingv':   state_attr('climate.ac', 'swing_mode') | default('Off', true),
+             'swingh':   state_attr('climate.ac', 'swing_horizontal_mode') | default('Off', true)
+           } | to_json }}
+
+      fan_mode_command_template: >-
+        {% set m = {'cool': 'Cool', 'heat': 'Heat', 'dry': 'Dry', 'fan_only': 'Fan'} -%}
+        {{ {
+             'power':    states('climate.ac') != 'off',
+             'mode':     m.get(states('climate.ac'), 'Cool'),
+             'temp':     state_attr('climate.ac', 'temperature') | default(24, true) | int,
+             'fan':      value,
+             'swingv':   state_attr('climate.ac', 'swing_mode') | default('Off', true),
+             'swingh':   state_attr('climate.ac', 'swing_horizontal_mode') | default('Off', true)
+           } | to_json }}
+
+      swing_mode_command_template: >-
+        {% set m = {'cool': 'Cool', 'heat': 'Heat', 'dry': 'Dry', 'fan_only': 'Fan'} -%}
+        {{ {
+             'power':    states('climate.ac') != 'off',
+             'mode':     m.get(states('climate.ac'), 'Cool'),
+             'temp':     state_attr('climate.ac', 'temperature') | default(24, true) | int,
+             'fan':      state_attr('climate.ac', 'fan_mode') | default('Medium', true),
+             'swingv':   value,
+             'swingh':   state_attr('climate.ac', 'swing_horizontal_mode') | default('Off', true)
+           } | to_json }}
+
+      swing_horizontal_mode_command_template: >-
+        {% set m = {'cool': 'Cool', 'heat': 'Heat', 'dry': 'Dry', 'fan_only': 'Fan'} -%}
+        {{ {
+             'power':    states('climate.ac') != 'off',
+             'mode':     m.get(states('climate.ac'), 'Cool'),
+             'temp':     state_attr('climate.ac', 'temperature') | default(24, true) | int,
+             'fan':      state_attr('climate.ac', 'fan_mode') | default('Medium', true),
+             'swingv':   state_attr('climate.ac', 'swing_mode') | default('Off', true),
+             'swingh':   value
+           } | to_json }}
+
+# Встроенный мост в Apple Home — делает то же, что отдельный home-bridge.
+# Работает поверх hostNetwork: Apple находит мост по mDNS в L2-сети,
+# через ClusterIP его не видно. Пейринг лежит в .storage (PVC), поэтому
+# переживает пересоздание пода; при потере тома придётся паровать заново.
+homekit:
+  - name: "HASS Bridge"
+    # Порт разведён с home-bridge (51174 и 51829), чтобы два моста
+    # могли какое-то время сосуществовать на одной ноде.
+    port: 21063
+    filter:
+      # Экспортируем поимённо: без фильтра HomeKit получит вообще все
+      # сущности, включая диагностические, и Дом захламится.
+      include_entities:
+        - climate.ac
+        - sensor.meteo_temperature
+        - sensor.meteo_humidity
+        - sensor.meteo_co2
+        # meteo_voc сюда не входит: HomeKit-мост принимает VOC только с
+        # device_class volatile_organic_compounds (мкг/м3), а BSEC отдаёт
+        # ppm (volatile_organic_compounds_parts). Нужен пересчёт.
+        # meteo_iaq и gas тоже: у них нет device_class, мост их не поймёт.
+    entity_config:
+      climate.ac:
+        name: Кондиционер
+      sensor.meteo_temperature:
+        name: Температура
+      sensor.meteo_humidity:
+        name: Влажность
+      sensor.meteo_co2:
+        name: CO2
+
+recorder:
+  purge_keep_days: 30
+
+logger:
+  default: info
