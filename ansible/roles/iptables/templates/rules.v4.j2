@@ -1,0 +1,51 @@
+*filter
+:INPUT DROP [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+
+# Loopback and replies to connections we opened ourselves
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# Cluster-internal traffic is always trusted: kube-proxy, flannel and
+# in-cluster clients (ingress, Prometheus, metrics-server, ...) all talk to
+# this node from pod/service IPs. Blocking this breaks k3s itself.
+-A INPUT -s {{ iptables_pod_cidr }} -j ACCEPT
+-A INPUT -s {{ iptables_service_cidr }} -j ACCEPT
+{% for iface in iptables_cni_interfaces %}
+-A INPUT -i {{ iface }} -j ACCEPT
+{% endfor %}
+
+# WireGuard tunnel: traffic already decrypted/authenticated by WireGuard
+-A INPUT -i {{ iptables_wg_interface }} -j ACCEPT
+{% if iptables_wg_listen_port %}
+-A INPUT -p udp --dport {{ iptables_wg_listen_port }} -j ACCEPT
+{% endif %}
+
+# Diagnostics
+-A INPUT -p icmp --icmp-type echo-request -j ACCEPT
+
+# SSH — port comes from the users role; keep them in sync, a mismatch here
+# locks you out.
+-A INPUT -p tcp --dport {{ ssh_port | default(2002) }} -j ACCEPT
+
+# Ports intentionally reachable from the LAN
+{% for port in iptables_lan_tcp_ports %}
+-A INPUT -p tcp --dport {{ port }} -j ACCEPT
+{% endfor %}
+{% for port in iptables_lan_udp_ports %}
+-A INPUT -p udp --dport {{ port }} -j ACCEPT
+{% endfor %}
+
+# k8s API (6443) for admin kubectl access from specific subnets, if any
+{% for cidr in iptables_api_admin_cidrs %}
+-A INPUT -p tcp --dport 6443 -s {{ cidr }} -j ACCEPT
+{% endfor %}
+
+# Everything else: dropped. Note this is filter/INPUT only — DNAT'd
+# NodePort/hostPort traffic is redirected in the nat table before it ever
+# reaches this chain, so it is NOT affected by this DROP. Blocking specific
+# NodePorts requires rules in the nat/PREROUTING table instead.
+-A INPUT -j DROP
+
+COMMIT

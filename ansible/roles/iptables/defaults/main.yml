@@ -1,0 +1,55 @@
+# k3s default CIDRs. If these were customized at install time
+# (INSTALL_K3S_EXEC --cluster-cidr / --service-cidr in roles/k3s), update
+# them here to match — otherwise legitimate cluster traffic gets dropped.
+iptables_pod_cidr: 10.42.0.0/16
+iptables_service_cidr: 10.43.0.0/16
+
+# CNI bridge interfaces flannel creates. Traffic on these must never be
+# blocked — kube-proxy/flannel rely on it for pod-to-pod networking.
+iptables_cni_interfaces:
+  - cni0
+  - flannel.1
+
+# WireGuard tunnel interface. Traffic that already arrived through the
+# tunnel is trusted (WireGuard itself authenticated it).
+iptables_wg_interface: wg0
+
+# Set this to the WG listen port (e.g. 51820) ONLY on a host that runs as a
+# WireGuard *server* (accepts inbound handshakes from the internet/LAN).
+# Leave empty on WireGuard clients (like the pi) — replies to their own
+# outbound keepalives are handled by conntrack, no inbound rule needed.
+iptables_wg_listen_port: ""
+
+# ssh_port is normally provided by the users role (defaults to 2002).
+# The template falls back to 2002 if it isn't defined in this play, but keep
+# them in sync — a mismatch here locks you out over ssh.
+
+# TCP ports that must be reachable from the LAN (not just from inside the
+# cluster). Only list things here that genuinely need L2/broadcast reach or
+# are meant to be hit by non-cluster devices on the network:
+#   80/443  - ingress (sites/dashboards used from the LAN)
+#   1883    - mosquitto, ESP sensors publish directly from the LAN
+#   21063   - HomeKit bridge, Apple devices discover it via mDNS on the LAN
+# Everything else (8123 HA UI, 9100 node_exporter, 6443, 10250, 10254, ...)
+# is deliberately left out: it's still reachable from INSIDE the cluster
+# (pod/service CIDR is always trusted, see above) via ingress/Prometheus/
+# kubelet — just not directly from other LAN devices.
+iptables_lan_tcp_ports:
+  - 80
+  - 443
+  - 1883
+  - 21063
+iptables_lan_udp_ports: []
+
+# CIDRs allowed to reach the k8s API (6443) directly, e.g. for kubectl from
+# an admin laptop. Empty by default — manage the cluster over WireGuard/ssh
+# instead. Add your admin subnet here if you need live kubectl access from
+# the LAN.
+iptables_api_admin_cidrs: []
+
+# Ports seen open during the nmap scan that are still unclassified
+# (8181, 8443, 18555, 33741) are intentionally NOT handled by this role yet.
+# Identify what's behind them first (`ss -tlnp`, `kubectl get svc -A`), then
+# add them to the right list above or to a dedicated allow rule.
+
+# IPv6 is not covered by this role — no ip6tables rules are touched.

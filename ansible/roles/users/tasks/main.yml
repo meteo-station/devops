@@ -25,6 +25,28 @@
   loop: "{{ users }}"
   when: item.sudoers_rules is defined and item.sudoers_rules | length > 0
 
+- name: Ensure sshd_config.d directory exists
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Ensure sshd_config includes sshd_config.d
+  # Must be the first line: sshd keeps the FIRST value for each directive,
+  # so an Include placed lower would lose to directives set above it.
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    line: Include /etc/ssh/sshd_config.d/*.conf
+    regexp: '^\s*Include\s+/etc/ssh/sshd_config\.d/\*\.conf\s*$'
+    insertbefore: BOF
+    firstmatch: yes
+    owner: root
+    group: root
+    mode: '0644'
+    validate: sshd -t -f %s
+
 - name: Configure SSH hardening drop-in
   # Name starts with 00- so it is read before 50-cloud-init.conf.
   # sshd uses the FIRST value it sees for each directive, so this wins.
@@ -38,8 +60,6 @@
     owner: root
     group: root
     mode: '0644'
-    validate: sshd -t -f %s
-  notify: Reload sshd
 
 - name: Set hostname
   hostname:

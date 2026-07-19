@@ -8,3 +8,6 @@ setup-server:
 
 wireguard:
 	ansible-playbook wireguard.yml
+
+firewall:
+	ansible-playbook firewall.yml

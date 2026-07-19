@@ -1,0 +1,49 @@
+- name: Install iptables-persistent
+  ansible.builtin.apt:
+    name: iptables-persistent
+    state: present
+    update_cache: yes
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Ensure netfilter-persistent service is enabled
+  ansible.builtin.systemd:
+    name: netfilter-persistent
+    enabled: yes
+
+- name: Render candidate ruleset (does not touch the live firewall yet)
+  ansible.builtin.template:
+    src: rules.v4.j2
+    dest: /etc/iptables/rules.v4.new
+    owner: root
+    group: root
+    mode: '0644'
+  register: iptables_rules_new
+
+- name: Validate candidate ruleset
+  ansible.builtin.command: iptables-restore --test /etc/iptables/rules.v4.new
+  changed_when: false
+
+- name: Install validated ruleset
+  ansible.builtin.copy:
+    src: /etc/iptables/rules.v4.new
+    dest: /etc/iptables/rules.v4
+    remote_src: yes
+    owner: root
+    group: root
+    mode: '0644'
+  register: iptables_rules
+  when: iptables_rules_new.changed
+
+- name: Apply ruleset now
+  # Only NEW connections are affected by the switch — this SSH session stays
+  # open thanks to the ESTABLISHED,RELATED rule even if something above is
+  # wrong. Still: open a second SSH session to confirm access before closing
+  # this one, in case the ssh_port rule doesn't match what sshd is using.
+  ansible.builtin.command: iptables-restore /etc/iptables/rules.v4
+  when: iptables_rules.changed
+
+- name: Clean up candidate ruleset file
+  ansible.builtin.file:
+    path: /etc/iptables/rules.v4.new
+    state: absent
