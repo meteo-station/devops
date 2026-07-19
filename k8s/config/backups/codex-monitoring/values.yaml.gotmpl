@@ -1,6 +1,12 @@
+# alpine + postgresql18-client/kubectl/openssh-client, см. images/backup-tools.
+# Раньше эти пакеты ставились через apk на каждом запуске, из-за чего бэкап
+# зависел от доступности зеркала Alpine.
 image:
-  repository: postgres
-  tag: "18-alpine"
+  repository: ghcr.io/bonavi/backup-tools
+  tag: "latest"
+  # latest мутабелен, поэтому IfNotPresent оставил бы ноду на старом слое
+  # после пересборки образа.
+  pullPolicy: Always
 
 deployment:
   enabled: false
@@ -40,32 +46,47 @@ cronjobs:
     args:
       - |
         set -euo pipefail
-        # pg_dump уже есть в postgres:18-alpine; ставим только ssh-клиент
-        apk add --no-cache openssh-client coreutils
+
+        log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 
         mkdir -p "$BACKUP_DIR"
         TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+        log "старт: базы [$PG_DATABASES], localhost:$PG_PORT на $SSH_HOST"
 
         install -m 0400 /ssh/id_ed25519 /tmp/id_ed25519
+        log "поднимаю ssh-туннель"
         ssh -i /tmp/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
           -p "$SSH_PORT" -N -L "5432:127.0.0.1:$PG_PORT" "$SSH_USER@$SSH_HOST" &
         PF_PID=$!
         trap 'kill $PF_PID 2>/dev/null || true' EXIT
 
+        # Проверка через pg_isready, а не через (echo > /dev/tcp/...): последнее
+        # умеет только bash, а здесь busybox ash — там это всегда ошибка, то
+        # есть цикл впустую отсиживал 30 секунд и шёл дальше вслепую.
+        READY=""
         for i in $(seq 1 30); do
-          (echo > /dev/tcp/127.0.0.1/5432) >/dev/null 2>&1 && break
+          pg_isready -h 127.0.0.1 -p 5432 -q && { READY=1; break; }
           sleep 1
         done
+        if [ -z "$READY" ]; then
+          log "ОШИБКА: ssh-туннель не поднялся за 30с"
+          exit 1
+        fi
+        log "туннель готов за ${i}с"
 
+        # $SECONDS в busybox ash нет, поэтому считаем по date +%s
+        STARTED=$(date +%s)
         for DB in $PG_DATABASES; do
           OUT="$BACKUP_DIR/${DB}-${TS}.sql.gz"
-          echo ">>> dumping $DB → $OUT"
+          log "дамп $DB -> $OUT"
+          T0=$(date +%s)
           pg_dump -h 127.0.0.1 -p 5432 -U "$PG_USER" -d "$DB" \
             --no-owner --no-privileges --clean --if-exists \
             | gzip -9 > "$OUT"
+          log "готово $DB: $(du -h "$OUT" | cut -f1) за $(($(date +%s) - T0))с"
         done
 
-        echo "All backups written to $BACKUP_DIR"
+        log "все дампы записаны в $BACKUP_DIR за $(($(date +%s) - STARTED))с, свободно: $(df -h "$BACKUP_DIR" | awk 'NR==2 {print $4}')"
     volumeMounts:
       - { name: ssh-key, mountPath: /ssh, readOnly: true }
       - { name: backup,  mountPath: /backup }

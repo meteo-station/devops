@@ -1,6 +1,12 @@
+# alpine + curl/openssh-client, см. images/backup-tools. Раньше базой был
+# clickhouse/clickhouse-server (745 МБ) ради одного клиента, а openssh ставился
+# через apk на каждом запуске — бэкап зависел от доступности зеркала Alpine.
 image:
-  repository: clickhouse/clickhouse-server
-  tag: "24-alpine"
+  repository: ghcr.io/bonavi/backup-tools
+  tag: "latest"
+  # latest мутабелен, поэтому IfNotPresent оставил бы ноду на старом слое
+  # после пересборки образа.
+  pullPolicy: Always
 
 deployment:
   enabled: false
@@ -11,7 +17,8 @@ envs:
   CH_DATABASES: "analytics"
   CH_TABLES: "analytic_aggr_partner_reconciliation"
   CH_USER: adrush
-  CH_PORT: "9000"
+  # HTTP-интерфейс ClickHouse, а не нативный протокол на 9000
+  CH_PORT: "8123"
   BACKUP_DIR: /backup
 
 secretEnv:
@@ -41,47 +48,77 @@ cronjobs:
     args:
       - |
         set -euo pipefail
-        # clickhouse-client уже есть в clickhouse-server:24-alpine; ставим только ssh-клиент
-        apk add --no-cache openssh-client coreutils
+
+        log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 
         mkdir -p "$BACKUP_DIR"
         TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+        log "старт: базы [$CH_DATABASES], таблицы [${CH_TABLES:-все}], 192.168.50.1:$CH_PORT через $SSH_HOST"
 
         install -m 0400 /ssh/id_ed25519 /tmp/id_ed25519
+        log "поднимаю ssh-туннель"
         ssh -i /tmp/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-          -p "$SSH_PORT" -N -L "9000:192.168.50.1:$CH_PORT" "$SSH_USER@$SSH_HOST" &
+          -p "$SSH_PORT" -N -L "8123:192.168.50.1:$CH_PORT" "$SSH_USER@$SSH_HOST" &
         PF_PID=$!
         trap 'kill $PF_PID 2>/dev/null || true' EXIT
 
+        # Проверка через /ping, а не через (echo > /dev/tcp/...): последнее
+        # умеет только bash, а здесь busybox ash — там это всегда ошибка, то
+        # есть цикл впустую отсиживал 30 секунд и шёл дальше вслепую.
+        READY=""
         for i in $(seq 1 30); do
-          (echo > /dev/tcp/127.0.0.1/9000) >/dev/null 2>&1 && break
+          curl -sf -m2 "http://127.0.0.1:8123/ping" >/dev/null 2>&1 && { READY=1; break; }
           sleep 1
         done
+        if [ -z "$READY" ]; then
+          log "ОШИБКА: ssh-туннель не поднялся за 30с (проверьте, слушает ли ClickHouse HTTP на $CH_PORT)"
+          exit 1
+        fi
+        log "туннель готов за ${i}с"
 
-        CH="clickhouse-client --host 127.0.0.1 --port 9000 --user $CH_USER --password $CHPASSWORD"
+        # Запросы идут по HTTP, а не родным клиентом: у ClickHouse клиент и
+        # сервер — один монолитный бинарь на ~490 МБ, из-за которого образ
+        # бэкапа весил 745 МБ вместо 20. HTTP отдаёт тот же FORMAT Native,
+        # содержимое дампа побайтово совпадает.
+        #
+        # Креды уходят заголовками, а не в URL и не аргументами командной
+        # строки: так пароль не виден в списке процессов.
+        #
+        # --fail-with-body обязателен: без него curl молча вернёт 0 и текст
+        # ошибки ClickHouse уедет в файл дампа вместо данных.
+        CH() {
+          curl -sS --fail-with-body \
+            -H "X-ClickHouse-User: $CH_USER" \
+            -H "X-ClickHouse-Key: $CHPASSWORD" \
+            --data-binary "$1" "http://127.0.0.1:8123/"
+        }
 
-        $CH --query "SELECT count() FROM analytics.analytic_aggr_partner_reconciliation"
+        log "проверяю доступность ClickHouse: $(CH 'SELECT version()')"
 
-
+        # $SECONDS в busybox ash нет, поэтому считаем по date +%s
+        STARTED=$(date +%s)
         for DB in $CH_DATABASES; do
           WORKDIR=$(mktemp -d)
+          T_DB=$(date +%s)
           if [ -n "$CH_TABLES" ]; then
             TABLES="$CH_TABLES"
           else
-            TABLES=$($CH --query "SHOW TABLES FROM $DB")
+            TABLES=$(CH "SHOW TABLES FROM $DB")
           fi
           for TABLE in $TABLES; do
-            echo ">>> dumping $DB.$TABLE"
-            $CH --query "SHOW CREATE TABLE $DB.\`$TABLE\`" > "$WORKDIR/${TABLE}.schema.sql"
-            $CH --query "SELECT * FROM $DB.\`$TABLE\` FORMAT Native" > "$WORKDIR/${TABLE}.native"
+            log "дамп $DB.$TABLE"
+            T0=$(date +%s)
+            CH "SHOW CREATE TABLE $DB.\`$TABLE\`" > "$WORKDIR/${TABLE}.schema.sql"
+            CH "SELECT * FROM $DB.\`$TABLE\` FORMAT Native" > "$WORKDIR/${TABLE}.native"
+            log "  строк: $(CH "SELECT count() FROM $DB.\`$TABLE\`"), данные: $(du -h "$WORKDIR/${TABLE}.native" | cut -f1) за $(($(date +%s) - T0))с"
           done
           OUT="$BACKUP_DIR/${DB}-${TS}.tar.gz"
           tar -C "$WORKDIR" -czf "$OUT" .
           rm -rf "$WORKDIR"
-          echo ">>> $DB → $OUT"
+          log "готово $DB -> $OUT: $(du -h "$OUT" | cut -f1) за $(($(date +%s) - T_DB))с"
         done
 
-        echo "All backups written to $BACKUP_DIR"
+        log "все дампы записаны в $BACKUP_DIR за $(($(date +%s) - STARTED))с, свободно: $(df -h "$BACKUP_DIR" | awk 'NR==2 {print $4}')"
     volumeMounts:
       - { name: ssh-key, mountPath: /ssh, readOnly: true }
       - { name: backup,  mountPath: /backup }

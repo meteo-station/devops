@@ -1,5 +1,13 @@
 export SOPS_AGE_KEY_FILE=secrets/key.txt
 
+# Образы
+# Нода — Raspberry Pi, поэтому платформа задаётся явно: без неё buildx на маке
+# соберёт arm64-образ по хосту, а на amd64-машине — неработающий на пине.
+backup-tools-image:
+	docker buildx build --platform linux/arm64 \
+		-t ghcr.io/bonavi/backup-tools:latest \
+		--push images/backup-tools
+
 # Тестирование
 show-spec:
 	helm show values bitnami/postgresql
