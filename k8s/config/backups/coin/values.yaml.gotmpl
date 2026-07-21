@@ -39,7 +39,11 @@ cronjobs:
     timeZone: "Europe/Moscow"
     concurrencyPolicy: Forbid
     activeDeadlineSeconds: 1800
-    ttlSecondsAfterFinished: 86400
+    # 15 минут: упавшая джоба живёт ровно столько, чтобы KubeJobFailed успел
+    # улететь, а потом удаляется и алерт сам резолвится. Детект тихого простоя
+    # держит CronJobNoSuccessfulRun по kube_cronjob_status_last_successful_time,
+    # он от этого TTL не зависит.
+    ttlSecondsAfterFinished: 900
     restartPolicy: OnFailure
     command: ["/bin/sh", "-c"]
     args:

@@ -27,13 +27,15 @@ additionalPrometheusRulesMap:
       # CronJob не завершался успешно дольше 25 часов (бэкапы у нас ежечасные —
       # 24 + запас). Ловит ситуацию, когда CronJob тихо не отрабатывает (suspended,
       # нет нод, image pull fail и т.п.).
+      #
+      # Берём kube_cronjob_status_last_successful_time — поле самого объекта
+      # CronJob, а не Job. Оно живёт, пока существует CronJob, и не зависит от
+      # ttlSecondsAfterFinished джоб (у бэкапов он 15 минут). Раньше правило
+      # читало completion_time существующих Job, и при коротком TTL успешная
+      # метрика исчезала раньше, чем выражение доросло бы до порога.
       - alert: CronJobNoSuccessfulRun
         expr: |
-          (time() - max by (namespace, cronjob) (
-            kube_job_status_completion_time
-            * on(namespace, job_name) group_left(cronjob)
-              kube_job_owner{owner_kind="CronJob"}
-          )) > 25 * 3600
+          (time() - kube_cronjob_status_last_successful_time) > 25 * 3600
         for: 10m
         labels:
           severity: Critical
