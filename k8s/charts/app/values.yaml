@@ -21,6 +21,9 @@ dnsPolicy: ""
 
 deployment:
   enabled: true
+  # Автоматический rollout пода при изменении configmap/secret/extraConfigMaps/extraSecrets
+  # (через checksum-аннотации). Выключить, если редеплой на изменение конфигов не нужен.
+  redeployOnConfigChange: true
   revisionHistoryLimit: 5
   terminationGracePeriodSeconds: 30
   strategy:

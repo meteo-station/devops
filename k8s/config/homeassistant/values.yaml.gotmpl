@@ -133,6 +133,22 @@ initContainers:
       - name: data
         mountPath: /config
 
+  # Ставит/обновляет HACS (custom_components/hacs) при каждом старте пода.
+  # Официальный скрипт идемпотентен — сам качает актуальный релиз и
+  # перезаписывает только код HACS, пользовательские данные не трогает.
+  # Первичную авторизацию (GitHub device flow) всё равно нужно пройти
+  # руками в Settings -> Devices & Services -> Add Integration -> HACS.
+  - name: init-hacs
+    image: "ghcr.io/home-assistant/home-assistant:stable"
+    command: ["/bin/sh", "-c"]
+    args:
+      - |
+        set -eu
+        wget -O - https://get.hacs.xyz | bash -
+    volumeMounts:
+      - name: data
+        mountPath: /config
+
 volumes:
   - name: config
     configMap:

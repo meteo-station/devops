@@ -18,6 +18,7 @@ spec:
   template:
     metadata:
       annotations:
+        {{- if .Values.deployment.redeployOnConfigChange }}
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         # Без этих двух правка extraConfigMaps/extraSecrets обновляет объект, но
@@ -26,6 +27,7 @@ spec:
         # конфиг продолжает работать до случайного рестарта.
         checksum/extra-configmaps: {{ include (print $.Template.BasePath "/extra-configmaps.yaml") . | sha256sum }}
         checksum/extra-secrets: {{ include (print $.Template.BasePath "/extra-secrets.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.deployment.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
