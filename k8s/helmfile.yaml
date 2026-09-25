@@ -168,54 +168,30 @@ releases:
       - template: singleton
 
   - name: backup-vpn
-    chart: ./charts/app
+    chart: ../common/k8s/charts/app
     namespace: backups
     createNamespace: true
     labels: { env: prod }
     values:
       - config/backups/vpn/values.yaml.gotmpl
 
-  - name: backup-codex
-    chart: ./charts/app
-    namespace: backups
-    createNamespace: true
-    labels: { env: prod }
-    values:
-      - config/backups/codex/values.yaml.gotmpl
-
-  - name: backup-codex-monitoring
-    chart: ./charts/app
-    namespace: backups
-    createNamespace: true
-    labels: { env: prod }
-    values:
-      - config/backups/codex-monitoring/values.yaml.gotmpl
-
   - name: backup-coin
-    chart: ./charts/app
+    chart: ../common/k8s/charts/app
     namespace: backups
     createNamespace: true
     labels: { env: prod }
     values:
       - config/backups/coin/values.yaml.gotmpl
 
-  - name: backup-codex-clickhouse
-    chart: ./charts/app
-    namespace: backups
-    createNamespace: true
-    labels: { env: prod }
-    values:
-      - config/backups/codex-clickhouse/values.yaml.gotmpl
-
   # Mosquitto (MQTT broker for meteo-station, hostNetwork)
   - name: mosquitto
-    chart: ./charts/app
+    chart: ../common/k8s/charts/app
     inherit:
       - template: singleton
 
   # Telegraf (MQTT -> агрегация 1m -> postgres)
   - name: telegraf
-    chart: ./charts/app
+    chart: ../common/k8s/charts/app
     needs:
       - mosquitto/mosquitto
       - "postgres-{{ .Environment.Name }}/postgres-init"
@@ -224,7 +200,7 @@ releases:
 
   # Home Assistant (hostNetwork for mDNS/SSDP device discovery)
   - name: homeassistant
-    chart: ./charts/app
+    chart: ../common/k8s/charts/app
     needs:
       - mosquitto/mosquitto
     inherit:

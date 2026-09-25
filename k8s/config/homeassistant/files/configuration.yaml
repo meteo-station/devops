@@ -3,6 +3,10 @@ default_config:
 homeassistant:
   name: Home
   time_zone: Europe/Moscow
+  # Координаты дома — через !secret (/config/secrets.yaml, см. values.yaml.gotmpl),
+  # чтобы точное местоположение не лежало в git.
+  latitude: !secret home_latitude
+  longitude: !secret home_longitude
   # Два эндпоинта: внутренний резолвится только в домашней сети,
   # внешний идёт через coin-1 (публичный ingress -> WG -> rpi).
   # HA отдаёт нужный из них клиентам, которые спрашивают "как до меня
@@ -335,3 +339,16 @@ recorder:
 
 logger:
   default: info
+
+# Данные для входа в Xiaomi-облако лежат в secrets-prod.yaml (SOPS) и
+# приезжают в под как /config/secrets.yaml через extraSecrets (values.yaml.gotmpl).
+# В ConfigMap их класть нельзя — он хранится в etcd открытым текстом.
+camera:
+  - platform: xiaomi_cloud_map_extractor
+    host: !secret xiaomi_vacuum_host
+    token: !secret xiaomi_vacuum_token
+    username: !secret xiaomi_vacuum_username
+    password: !secret xiaomi_vacuum_password
+    country: ru
+    scan_interval: 30
+    draw: [ 'all' ]

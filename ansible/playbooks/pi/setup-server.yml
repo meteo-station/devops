@@ -9,3 +9,8 @@
 
   roles:
     - role: users
+    - role: ssh_hardening
+    - role: hostname
+    - role: fail2ban
+    - role: unattended_upgrades
+    - role: reboot
