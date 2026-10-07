@@ -1,2 +1,4 @@
 ansible/config/.vault_password
 k8s/secrets/key.txt
+esphome/key.txt
+esphome/config/secrets.yaml

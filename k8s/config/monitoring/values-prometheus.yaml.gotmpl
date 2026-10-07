@@ -85,3 +85,16 @@ prometheus:
       metric_relabel_configs:
       - action: labeldrop
         regex: pod_template_hash
+
+#    - job_name: node-exporter
+#      metrics_path: '/metrics'
+#      scrape_interval: 5s
+#      static_configs:
+#        - targets:
+#            # Фронт
+#            - 192.168.1.1:9100
+#      relabel_configs:
+#        - source_labels: [__address__]
+#          regex: '([^:]+):.*'
+#          target_label: instance
+#          replacement: '$1'

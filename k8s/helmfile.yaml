@@ -205,3 +205,9 @@ releases:
       - mosquitto/mosquitto
     inherit:
       - template: singleton
+
+  # Music Assistant (hostNetwork for player discovery, рядом с Home Assistant)
+  - name: music-assistant
+    chart: ../common/k8s/charts/app
+    inherit:
+      - template: singleton

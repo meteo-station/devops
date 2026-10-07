@@ -4,4 +4,4 @@
   tasks:
     - name: Setup iptables
       import_role:
-        name: iptables
+        name: firewall

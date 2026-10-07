@@ -6,6 +6,9 @@ init-users:
 setup-server:
 	ansible-playbook setup-server.yml
 
+setup-app:
+	ansible-playbook setup-app.yml
+
 wireguard:
 	ansible-playbook wireguard.yml
 

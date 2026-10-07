@@ -1,5 +1,9 @@
 default_config:
 
+# Темы лежат в /config/themes (отдельный ConfigMap, см. values.yaml.gotmpl).
+frontend:
+  themes: !include_dir_merge_named themes
+
 homeassistant:
   name: Home
   time_zone: Europe/Moscow

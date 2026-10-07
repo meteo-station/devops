@@ -108,6 +108,12 @@ extraConfigMaps:
       # экранировать Jinja HA от рендера helmfile.
       configuration.yaml: |
 {{ readFile "files/configuration.yaml" | indent 8 }}
+  # Темы интерфейса: каждый ключ — файл в /config/themes.
+  themes:
+    raw: true
+    data:
+      glass.yaml: |
+{{ readFile "files/themes/glass.yaml" | indent 8 }}
 
 # configuration.yaml резолвит !secret из /config/secrets.yaml. Значения берутся
 # из secrets-prod.yaml (SOPS) на этапе рендера helmfile и кладутся в Secret, а не
@@ -169,6 +175,10 @@ volumes:
       name: homeassistant-config
       defaultMode: 0644
   # secrets.yaml для !secret в configuration.yaml (см. extraSecrets выше).
+  - name: themes
+    configMap:
+      name: homeassistant-themes
+      defaultMode: 0644
   - name: secrets
     secret:
       secretName: homeassistant-secrets
@@ -194,6 +204,8 @@ volumeMounts:
   - name: config
     mountPath: /config/configuration.yaml
     subPath: configuration.yaml
+  - name: themes
+    mountPath: /config/themes
   # subPath не обновляется в живом поде, но checksum/extra-secrets перекатывает
   # под при изменении секрета — как и для configuration.yaml выше.
   - name: secrets

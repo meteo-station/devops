@@ -1,7 +1,7 @@
 ---
-- name: Configure WireGuard client (Raspberry Pi)
+- name: Configure WireGuard interfaces
   hosts: pi
   become: yes
 
   roles:
-    - role: wireguard_client
+    - role: wireguard

@@ -1,0 +1,67 @@
+glass:
+  modes:
+    dark:
+      # --- акцент (подчёркивание вкладок, переключатели, выделение) ---
+      primary-color: "#4a9eff"
+      accent-color: "#4a9eff"
+
+      # --- шапка ---
+      app-header-background-color: "rgba(14, 20, 32, 0.75)"
+      app-header-text-color: "#e6edf7"
+      app-header-selection-bar-color: "#4a9eff"
+      app-header-edit-background-color: "#1c2a44"
+      app-header-edit-text-color: "#e6edf7"
+
+      # --- боковая панель ---
+      sidebar-background-color: "#0e1420"
+      sidebar-text-color: "#c9d4e5"
+      sidebar-icon-color: "#7f91ad"
+      sidebar-selected-text-color: "#4a9eff"
+      sidebar-selected-icon-color: "#4a9eff"
+      divider-color: "rgba(255, 255, 255, 0.06)"
+
+      # --- фон страниц без картинки (настройки, HACS) ---
+      primary-background-color: "#0e1420"
+      secondary-background-color: "#141c2b"
+
+      # --- всплывающие окна ---
+      mdc-theme-surface: "rgba(20, 27, 40, 0.9)"
+      ha-dialog-surface-background: "rgba(20, 27, 40, 0.9)"
+      dialog-backdrop-filter: "blur(8px)"
+      ha-dialog-border-radius: "20px"
+
+      # --- текст ---
+      primary-text-color: "#e6edf7"
+      secondary-text-color: "#8a9bb5"
+      text-primary-color: "#ffffff"
+      state-icon-color: "#7f91ad"
+
+      # --- непрозрачные поверхности (меню, таблицы, страницы настроек) ---
+      card-background-color: "#141c2b"
+
+      # --- таблицы (HACS, сущности, устройства, автоматизации) ---
+      data-table-background-color: "#0e1420"
+      table-row-background-color: "#0e1420"
+      table-row-alternative-background-color: "#111827"
+      table-header-background-color: "#0e1420"
+
+      # --- поля ввода, выпадающие списки ---
+      input-fill-color: "#141c2b"
+      mdc-text-field-fill-color: "#141c2b"
+      mdc-select-fill-color: "#141c2b"
+
+      # --- редактор кода (YAML, шаблоны) ---
+      code-editor-background-color: "#0b111b"
+      markdown-code-background-color: "#0b111b"
+
+      # --- переключатели и прочие элементы ---
+      switch-checked-color: "#4a9eff"
+      switch-checked-button-color: "#4a9eff"
+      switch-checked-track-color: "#4a9eff"
+
+      # --- карточки (как было) ---
+      ha-card-background: "rgba(28, 30, 36, 0.55)"
+      ha-card-backdrop-filter: "blur(18px) saturate(140%)"
+      ha-card-border-color: "rgba(255, 255, 255, 0.08)"
+      ha-card-border-radius: "16px"
+      ha-card-box-shadow: "0 4px 24px rgba(0, 0, 0, 0.25)"

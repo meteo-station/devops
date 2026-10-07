@@ -1,5 +1,20 @@
 export SOPS_AGE_KEY_FILE=secrets/key.txt
 
+SERVICE ?= monitoring
+SELECTOR = $(if $(SERVICE),-l name=$(SERVICE))
+
+# Контекст задаётся явно: helmfile определяет версию кластера (--kube-version)
+# по текущему контексту kubeconfig, а не по helmDefaults.kubeContext
+KUBE_CONTEXT ?= pi
+HELMFILE = helmfile --kube-context $(KUBE_CONTEXT)
+
+# Деплой
+deploy-prod:
+	$(HELMFILE) -e prod apply $(SELECTOR)
+
+deploy-dev:
+	$(HELMFILE) -e dev apply -l env!=prod,$(if $(SERVICE),$(comma)name=$(SERVICE))
+
 # Образы
 # Нода — Raspberry Pi, поэтому платформа задаётся явно: без неё buildx на маке
 # соберёт arm64-образ по хосту, а на amd64-машине — неработающий на пине.
@@ -13,29 +28,22 @@ show-spec:
 	helm show values bitnami/postgresql
 
 template-prod:
-	helmfile -e prod template # -l name=go-server
+	$(HELMFILE) -e prod template # -l name=go-server
 
 template-dev:
-	helmfile -e dev template # -l name=go-server
+	$(HELMFILE) -e dev template # -l name=go-server
 
 write-values-prod:
-	helmfile -e prod write-values
+	$(HELMFILE) -e prod write-values
 
 write-values-dev:
-	helmfile -e dev write-values
-
-# Деплой
-deploy-prod:
-	helmfile -e prod apply # -l name=homeassistant
-
-deploy-dev:
-	helmfile -e dev apply -l env!=prod
+	$(HELMFILE) -e dev write-values
 
 sync-prod:
-	helmfile -e prod sync
+	$(HELMFILE) -e prod sync
 
 sync-dev:
-	helmfile -e dev sync -l env!=prod
+	$(HELMFILE) -e dev sync -l env!=prod
 
 uninstall-prod:
 	helm uninstall ingress-nginx -n ingress-nginx-prod
@@ -65,5 +73,5 @@ kubeconfig:
 # чтобы браузеры/клиенты перестали ругаться на сертификаты grafana.home, exporter.home и т.п.
 home-ca:
 	kubectl get secret home-ca-tls -n cert-manager -o jsonpath='{.data.ca\.crt}' | base64 -d > ~/Desktop/home-ca.crt
-	@echo "Root CA saved to ~/Desktop/home-ca.crt"
+	@echo "Root CA saved to ~/Desktop/home-ca.
 	@echo "macOS: открой Keychain Access → drag-n-drop файл → Always Trust"

@@ -5,12 +5,7 @@ all:
 
   hosts:
     pi:
-      ansible_host: 192.168.0.11
-
-    vps:
-      ansible_host: coin-1.bonavii.com
-      ansible_user: devops
-      ansible_ssh_private_key_file: "~/.ssh/id_ed25519_devops_coin"
+      ansible_host: 10.20.20.1
 
     router:
       ansible_host: 192.168.1.1

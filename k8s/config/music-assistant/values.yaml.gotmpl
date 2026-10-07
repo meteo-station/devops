@@ -1,0 +1,95 @@
+image:
+  repository: ghcr.io/music-assistant/server
+  tag: latest
+
+replicaCount: 1
+
+# hostNetwork нужен для обнаружения плееров (mDNS/UPnP/Chromecast/AirPlay) —
+# multicast в L2-сети дома до пода в overlay-сети не долетает. Плееры также
+# сами подключаются к стриминг-серверу MA (порт 8097) на IP ноды.
+hostNetwork: true
+dnsPolicy: ClusterFirstWithHostNet
+
+# hostNetwork занимает порты 8095/8097 на ноде: при RollingUpdate новый под не
+# может стартовать, пока старый их держит. Recreate сначала гасит старый под.
+deployment:
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+
+service:
+  enabled: true
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8095
+      targetPort: 8095
+
+ingresses:
+  - name: main
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: selfsigned-home
+    hosts:
+      - host: musicassistant.home
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - hosts: [musicassistant.home]
+        secretName: musicassistant-home-tls
+
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  failureThreshold: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
+envs:
+  TZ: Europe/Moscow
+
+# Настройки, кэш и библиотека MA живут в /data — переживают пересоздание пода.
+persistence:
+  data:
+    enabled: true
+    size: 2Gi
+    storageClassName: local-path
+
+volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: music-assistant-data
+
+volumeMounts:
+  - name: data
+    mountPath: /data
